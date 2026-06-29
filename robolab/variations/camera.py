@@ -25,7 +25,10 @@ class OverShoulderLeftCameraCfg:
             vertical_aperture=3.024,
         ),
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.05, 0.57, 0.66), rot=(-0.393, -0.195, 0.399, 0.805), convention="opengl"
+            # isaaclab3 XYZW (x,y,z,w), migrated from the pre-upgrade wxyz (-0.393,-0.195,0.399,0.805).
+            # Same camera pose; under isaaclab 3.0 the wxyz value read as xyzw rolled the camera 180deg
+            # about its view axis (upside-down image), which the old observation_utils vhflip undid.
+            pos=(0.05, 0.57, 0.66), rot=(-0.195, 0.399, 0.805, -0.393), convention="opengl"
         ),
     )
 
@@ -55,7 +58,9 @@ class OverShoulderRightCameraCfg:
             vertical_aperture=3.024,
         ),
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.05, -0.57, 0.66), rot=(0.805, 0.399, -0.195, -0.393), convention="opengl"
+            # isaaclab3 XYZW (x,y,z,w), migrated from the pre-upgrade wxyz (0.805,0.399,-0.195,-0.393).
+            # Same camera pose (see OverShoulderLeft note); replaces the old wxyz+vhflip combination.
+            pos=(0.05, -0.57, 0.66), rot=(0.399, -0.195, -0.393, 0.805), convention="opengl"
         ),
     )
 

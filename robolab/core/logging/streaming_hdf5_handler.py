@@ -386,7 +386,20 @@ class StreamingHDF5DatasetFileHandler(DatasetFileHandlerBase):
                     key_group, sub_key, sub_value, datasets_cache
                 )
         else:
-            np_data = value.cpu().numpy()
+            # Compat shim (isaacsim6/isaaclab3 upgrade): some recorder leaves now
+            # arrive as python lists/np arrays rather than tensors. Convert when we
+            # safely can; skip (don't crash) leaves we can't serialize as an array.
+            if isinstance(value, torch.Tensor):
+                np_data = value.cpu().numpy()
+            else:
+                try:
+                    np_data = np.asarray(value)
+                except Exception:
+                    print(f"[StreamingHDF5] skip unserializable recorder leaf '{group.name}/{key}' ({type(value).__name__})")
+                    return
+                if np_data.dtype == object or np_data.ndim == 0:
+                    print(f"[StreamingHDF5] skip non-array recorder leaf '{group.name}/{key}' (dtype={np_data.dtype}, ndim={np_data.ndim})")
+                    return
             cache_key = f"{group.name}/{key}"
 
             if cache_key in datasets_cache:

@@ -51,8 +51,12 @@ _WRIST_CAM = TiledCameraCfg(
         horizontal_aperture=5.376,
         vertical_aperture=3.024,
     ),
+    # Offset reproduces the baked USD `wrist_camera_flipped` prim
+    # (.../base_link/wrist_camera_flipped): look ~ (0.333, 0.011, -0.943) steep down-forward
+    # at the workspace. This is the policy-calibrated DROID wrist mount; the prior committed
+    # rot pointed the camera sideways (+Y) in isaacsim6 because base_link loads re-oriented.
     offset=TiledCameraCfg.OffsetCfg(
-        pos=(0.011, -0.031, -0.074), rot=(-0.420, 0.570, 0.576, -0.409), convention="opengl"
+        pos=(0.011, -0.031, -0.074), rot=(-0.5813, -0.5733, 0.4157, 0.4007), convention="opengl"
     ),
 )
 
@@ -64,7 +68,7 @@ class DroidCfg:
     robot = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path= os.path.join(ROBOTS_DIR, "franka_robotiq_2f_85_flattened.usd"),
+            usd_path= os.path.join(ROBOTS_DIR, "franka_robotiq_2f_85_flattened_mimicfix.usd"),  # mimic-damping fix (stops linkage divergence under arm motion)
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
@@ -78,7 +82,11 @@ class DroidCfg:
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0, 0, 0),
-            rot=(1, 0, 0, 0),
+            # Un-inverts the arm under isaaclab3. The conventional wxyz identity (1,0,0,0)
+            # loads the flattened robot upside-down (gripper below the table, out of reach) --
+            # isaaclab3 reads InitialStateCfg.rot as xyzw, so (0,0,0,1) is the upright identity.
+            # Verified load-bearing: (1,0,0,0) scores 0/6 on BananaInBowl & GrabAFruit vs 6/6.
+            rot=(0, 0, 0, 1),
             joint_pos={
                 "panda_joint1": 0.0,
                 "panda_joint2": -1 / 5 * np.pi,
@@ -95,32 +103,58 @@ class DroidCfg:
         ),
         soft_joint_pos_limit_factor=1,
         actuators={
+            # Arm actuators ported VERBATIM from the official isaaclab Franka+Robotiq cfg:
+            #   isaaclab_assets/robots/franka.py :: FRANKA_ROBOTIQ_GRIPPER_CFG
+            # i.e. shoulder effort_limit_sim=5200 / stiffness=1100 / damping=80, forearm
+            # 720 / 1000 / 80. isaaclab3's actuator limits only reach the PhysX solver when
+            # given as the *_sim variants (effort_limit_sim / velocity_limit_sim); the
+            # pre-upgrade gains here were the Panda-hand values (effort_limit 87/12,
+            # stiffness 400) which stall the arm under gravity in isaacsim6. Verified
+            # load-bearing: reverting droid.py to base -> 0/6 on BananaInBowl & GrabAFruit.
+            # (We keep RoboLab's own init_state DROID home pose + the mimic-damped DROID
+            # USD, not the upstream cfg's franka.usd/init pose.)
             "panda_shoulder": ImplicitActuatorCfg(
                 joint_names_expr=["panda_joint[1-4]"],
-                # stiffness=None,
-                # damping=None,
-                effort_limit=87.0,
-                velocity_limit=2.175,
-                stiffness=400.0,
+                effort_limit_sim=5200.0,
+                velocity_limit_sim=2.175,
+                stiffness=1100.0,
                 damping=80.0,
             ),
             "panda_forearm": ImplicitActuatorCfg(
                 joint_names_expr=["panda_joint[5-7]"],
-                # stiffness=None,
-                # damping=None,
-                effort_limit=12.0,
-                velocity_limit=2.61,
-                stiffness=400.0,
+                effort_limit_sim=720.0,
+                velocity_limit_sim=2.61,
+                stiffness=1000.0,
                 damping=80.0,
             ),
-            "gripper": ImplicitActuatorCfg(
+            # Gripper actuators also ported verbatim from FRANKA_ROBOTIQ_GRIPPER_CFG
+            # (isaaclab_assets/robots/franka.py): the 2F-85 close-loop linkage is modelled
+            # as three groups -- driven finger_joint (drive), the parallel inner fingers
+            # (finger), and the passive knuckle joints (passive, PD=0). The pre-upgrade
+            # config drove finger_joint alone with stiffness=2000, ~100x too stiff for the
+            # mimic linkage -> it oscillated (finger_joint swung +/-pi) and corrupted the
+            # gripper_pos proprio. Values: drive 1650/17/0.02, finger 50/0.2/0.001,
+            # passive 1/0/0 (effort_limit_sim/stiffness/damping).
+            "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
-                stiffness=None,
-                damping=None,
-                # effort_limit=150.0,
-                velocity_limit=5.0, #2.175,
-                # stiffness=1000.0,
-                # damping=40.0,
+                effort_limit_sim=1650.0,
+                velocity_limit_sim=10.0,
+                stiffness=17.0,
+                damping=0.02,
+            ),
+            "gripper_finger": ImplicitActuatorCfg(
+                joint_names_expr=[".*_inner_finger_joint"],
+                effort_limit_sim=50.0,
+                velocity_limit_sim=10.0,
+                stiffness=0.2,
+                damping=0.001,
+            ),
+            "gripper_passive": ImplicitActuatorCfg(
+                joint_names_expr=[".*_inner_finger_knuckle_joint", "right_outer_knuckle_joint"],
+                effort_limit_sim=1.0,
+                velocity_limit_sim=10.0,
+                stiffness=0.0,
+                damping=0.0,
             ),
         },
     )
@@ -294,12 +328,28 @@ class DroidJointPositionActionCfg:
         joint_names=["panda_joint.*"],
         preserve_order=True,
         use_default_offset=False,
+        # Clamp arm joint-position targets to the Franka Panda limits. isaaclab applies this
+        # in JointAction.process_actions (torch.clamp to [min,max]) -- the supported way to
+        # bound targets -- so we do NOT need a manual clamp in the eval loop. Needed because
+        # an out-of-range target (pi0.5 occasionally overshoots, e.g. panda_joint5) otherwise
+        # winds the joint up to tens of radians and corrupts the proprio fed back to the policy.
+        # Values are the official Franka Emika Panda joint position limits (rad), from the
+        # panda URDF / datasheet.
+        clip={
+            "panda_joint1": (-2.8973, 2.8973),
+            "panda_joint2": (-1.7628, 1.7628),
+            "panda_joint3": (-2.8973, 2.8973),
+            "panda_joint4": (-3.0718, -0.0698),
+            "panda_joint5": (-2.8973, 2.8973),
+            "panda_joint6": (-0.0175, 3.7525),
+            "panda_joint7": (-2.8973, 2.8973),
+        },
     )
 
     finger_joint = BinaryJointPositionZeroToOneActionCfg(
         asset_name="robot",
         joint_names=["finger_joint"],
-        open_command_expr = {"finger_joint": 0.0},
+        open_command_expr={"finger_joint": 0.0},
         close_command_expr={"finger_joint": np.pi / 4},
     )
 

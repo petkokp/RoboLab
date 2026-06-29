@@ -60,6 +60,51 @@ def _as_torch_tensor(value):
     return value.torch if hasattr(value, "torch") else value
 
 
+# --- isaacsim6/isaaclab3 compat shim: UsdFrameView.get_scales (upstream fragility) ----
+# WHAT CRASHES (exact, verified by reverting this guard):
+#   CRASHTEST GrabAFruitTask: CRASH[step] TypeError: No registered converter was able to
+#   produce a C++ rvalue of type ...GfVec3d from this Python object of type float
+# WHERE (real call chain, from the traceback -- NOT a direct get_world_poses call):
+#   WorldState.get_pose (below) -> FabricFrameView.get_world_poses
+#     -> FabricFrameView._sync_fabric_from_usd_once   (isaaclab_physx/sim/views/fabric_frame_view.py:444)
+#     -> UsdFrameView.get_scales                      (isaaclab/sim/views/usd_frame_view.py:325)
+# Under use_fabric=True the fabric view does a ONE-TIME scale sync from USD on the first
+# pose query. get_scales there does `scales[idx] = prim.GetAttribute("xformOp:scale").Get()`
+# straight into a Vt.Vec3dArray -- it ASSUMES every prim authors a 3-vector scale. Many
+# RoboLab fixture/object prims omit xformOp:scale (-> .Get() is None) or author it as a
+# scalar double (-> .Get() is a float); both are valid USD but break that assignment. This
+# is a genuine isaaclab robustness gap (the constructor only validates xformOpOrder, not the
+# scale TYPE), not a renamed/migrated API -- so we replace get_scales with a version that
+# coerces missing->(1,1,1) and scalar s->(s,s,s). Re-author-the-USDs is the only patch-free
+# alternative (add explicit float3 scale to every static prim across the asset library);
+# rejected as far more invasive (dozens of LFS assets) for the same result.
+try:
+    from isaaclab.sim.views.usd_frame_view import UsdFrameView as _UFV
+
+    if not getattr(_UFV, "_robolab_scale_guard", False):
+        import warp as _wp
+
+        def _robolab_get_scales(self, indices=None):
+            idxs = self._resolve_indices(indices)
+            out = []
+            for prim_idx in idxs:
+                attr = self._prims[prim_idx].GetAttribute("xformOp:scale")
+                v = attr.Get() if attr else None
+                if v is None:
+                    v = (1.0, 1.0, 1.0)
+                elif isinstance(v, (int, float)):
+                    v = (float(v), float(v), float(v))
+                else:
+                    v = (float(v[0]), float(v[1]), float(v[2]))
+                out.append(v)
+            return _wp.array(np.array(out, dtype=np.float32), dtype=_wp.float32, device=self._device)
+
+        _UFV.get_scales = _robolab_get_scales
+        _UFV._robolab_scale_guard = True
+except Exception as _e:  # pragma: no cover - defensive
+    print(f"[robolab/compat] could not install get_scales guard: {_e}")
+
+
 def get_world(env: ManagerBasedRLEnv=None):
     """
     Get or create the global WorldState singleton.
@@ -401,14 +446,18 @@ class WorldState:
         """
         body = self.get_body(body_name)
         if isinstance(body, AssetBase):
+            # root_quat_w is WXYZ (scalar-first) at runtime, but every downstream geometry
+            # consumer (quat_apply / transform_points / matrix_from_quat) is XYZW. Convert
+            # once here so all predicates get a correct quaternion (this is THE fix for the
+            # containment/stacking 0-scores; it replaces the per-predicate workarounds).
             if env_id is not None:
                 pos = body.data.root_pos_w[env_id].clone().detach()
-                quat = body.data.root_quat_w[env_id].clone().detach()
+                quat = body.data.root_quat_w[env_id].clone().detach()[..., [1, 2, 3, 0]]
                 if is_relative:
                     pos = pos - self.env.scene.env_origins[env_id]
             else:
                 pos = body.data.root_pos_w.clone().detach()  # (N, 3)
-                quat = body.data.root_quat_w.clone().detach()  # (N, 4)
+                quat = body.data.root_quat_w.clone().detach()[..., [1, 2, 3, 0]]  # wxyz->xyzw
                 if is_relative:
                     pos = pos - self.env.scene.env_origins  # (N, 3)
         elif _is_xform_prim_like(body):
@@ -581,7 +630,21 @@ class WorldState:
             env_id: None → Tensor(num_envs,) bool, int → bool
         """
         contact_sensor = get_contact_sensor(self.env.scene, body1, body2)
-        force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
+        # The contact-sensor backend guard (robolab/core/sensors/contact_sensor_utils.py) sets
+        # filter_prim_paths_expr=None on sensors whose PhysX filtered-contact backend failed to
+        # build (a filter body has no contact-capable collider). Reading force_matrix_w on such
+        # an inert sensor dereferences the None backend:
+        #   AttributeError: 'NoneType' object has no attribute 'sensor_count'
+        # (verified by reverting this guard: CRASHTEST BananaOnPlateTask CRASH[step]). Check the
+        # flag explicitly and return "no contact" -- don't catch-all and don't touch the backend.
+        if contact_sensor.cfg.filter_prim_paths_expr is None:
+            force_matrix = None
+        else:
+            force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
+        if force_matrix is None:
+            if env_id is not None:
+                return False
+            return torch.zeros(self.env.num_envs, dtype=torch.bool, device=self.env.device)
         if env_id is not None:
             return torch.any(torch.abs(force_matrix[env_id]) > force_threshold).item()
         else:
@@ -652,7 +715,19 @@ class WorldState:
             env_id: None → (num_envs, 3), int → (3,)
         """
         contact_sensor, is_reversed = get_contact_sensor_with_order(self.env.scene, body1, body2)
-        force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
+        # Same inert-sensor case as in_contact() above: filter_prim_paths_expr=None means the
+        # PhysX filtered-contact backend never built, so reading force_matrix_w would raise
+        # AttributeError: 'NoneType' object has no attribute 'sensor_count'. Check explicitly
+        # and return zero force; do not catch-all and do not touch the dead backend.
+        if contact_sensor.cfg.filter_prim_paths_expr is None:
+            force_matrix = None
+        else:
+            force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
+        if force_matrix is None:
+            # No contact-view backend (e.g. a static/no-collider surface) -> zero force.
+            if env_id is not None:
+                return torch.zeros(3, dtype=torch.float32, device=self.env.device)
+            return torch.zeros(self.env.num_envs, 3, dtype=torch.float32, device=self.env.device)
         if env_id is not None:
             net_force = force_matrix[env_id].sum(dim=(0, 1))  # (3,)
         else:
@@ -663,6 +738,51 @@ class WorldState:
             net_force = -net_force
 
         return net_force
+
+    def _geometric_supported(
+        self,
+        obj: str,
+        surface: str,
+        vert_tol: float = 0.04,
+        xy_tol: float = 0.02,
+        lin_speed_thresh: float = 0.1,
+    ) -> torch.Tensor:
+        """Geometric fallback for ``is_supported_on_surface`` (returns (N,) bool tensor).
+
+        Contact-force sensing is unavailable for static / no-collider surfaces under
+        IsaacSim 6 + fabric (the contact view has no backend for an AssetBase surface),
+        so a banana resting on a static plate reports zero contact force. This proxy
+        decides "supported" purely from geometry + motion: the object is supported if
+        it is (a) roughly stationary, (b) its lowest point sits at/below the surface
+        top but not below the surface base (resting on or settled into it), and
+        (c) its centroid is within the surface's xy footprint. Live physics poses are
+        used throughout (via get_bbox/get_velocity), so it is fabric-safe.
+
+        The tolerances are empirical, not from a reference: vert_tol=0.04 m (4 cm slack on
+        the rest gap, covering bbox/penetration noise), xy_tol=0.02 m (2 cm footprint slack),
+        lin_speed_thresh=0.1 m/s ("settled" cutoff). They are deliberately loose because this
+        is only an OR-ed fallback for the static-surface case where contact sensing returns
+        nothing — it can make a true placement winnable but, being ANDed with the caller's own
+        position predicate, will not by itself pass a wrong placement.
+        """
+        obj_corners, obj_centroid = self.get_bbox(obj, env_id=None)      # (N,8,3), (N,3)
+        surf_corners, _ = self.get_bbox(surface, env_id=None)           # (N,8,3)
+        vel = self.get_velocity(obj, env_id=None)                       # (N,6)
+
+        obj_min_z = obj_corners[:, :, 2].min(dim=1).values             # (N,)
+        surf_max_z = surf_corners[:, :, 2].max(dim=1).values
+        surf_min_z = surf_corners[:, :, 2].min(dim=1).values
+        gap = obj_min_z - surf_max_z
+        adjacent = (gap <= vert_tol) & (obj_min_z >= surf_min_z - vert_tol)
+
+        sx_min = surf_corners[:, :, 0].min(dim=1).values; sx_max = surf_corners[:, :, 0].max(dim=1).values
+        sy_min = surf_corners[:, :, 1].min(dim=1).values; sy_max = surf_corners[:, :, 1].max(dim=1).values
+        in_x = (obj_centroid[:, 0] >= sx_min - xy_tol) & (obj_centroid[:, 0] <= sx_max + xy_tol)
+        in_y = (obj_centroid[:, 1] >= sy_min - xy_tol) & (obj_centroid[:, 1] <= sy_max + xy_tol)
+
+        speed = torch.norm(vel[:, :3], dim=-1)
+        stationary = speed < lin_speed_thresh
+        return adjacent & in_x & in_y & stationary  # (N,) bool
 
     def is_supported_on_surface(
         self,
@@ -675,6 +795,11 @@ class WorldState:
         """
         Check if an object is stably supported on a surface by analyzing contact forces.
 
+        Falls back to a geometric rest test (``_geometric_supported``) when contact
+        sensing is unavailable, e.g. a static/no-collider surface such as a plate under
+        IsaacSim 6 + fabric. The original (IsaacSim 4) pipeline relied solely on contact
+        forces; that path is kept and OR-ed with the geometric proxy.
+
         Args:
             env_id: None → Tensor(num_envs,) bool, int → bool
         """
@@ -683,14 +808,20 @@ class WorldState:
 
         if env_id is not None:
             force_magnitude = torch.norm(contact_force).item()
-            if force_magnitude < force_threshold:
+            contact_ok = (
+                force_magnitude >= force_threshold
+                and contact_force[2].item() > 0
+                and contact_force[2].item() >= force_magnitude * cos_theta_max
+            )
+            if contact_ok:
+                return True
+            # Geometric fallback. It reads get_bbox/get_velocity (paths the old contact-only
+            # test never touched), which can raise on exotic/non-mesh surfaces -> fall back to
+            # "not supported" so a quirky surface can't crash the episode.
+            try:
+                return bool(self._geometric_supported(obj, surface)[env_id].item())
+            except Exception:
                 return False
-            fz = contact_force[2].item()
-            if fz <= 0:
-                return False
-            if fz < force_magnitude * cos_theta_max:
-                return False
-            return True
         else:
             # Vectorized: contact_force is (N, 3)
             force_magnitude = torch.norm(contact_force, dim=-1)  # (N,)
@@ -698,7 +829,13 @@ class WorldState:
             has_contact = force_magnitude >= force_threshold
             force_upward = fz > 0
             in_cone = fz >= force_magnitude * cos_theta_max
-            return has_contact & force_upward & in_cone  # (N,) bool tensor
+            contact_ok = has_contact & force_upward & in_cone  # (N,) bool tensor
+            # Geometric fallback (see scalar branch): conservative "not supported" on error.
+            try:
+                geom_ok = self._geometric_supported(obj, surface)
+            except Exception:
+                geom_ok = torch.zeros_like(contact_ok)
+            return contact_ok | geom_ok
 
     def get_objects_supported_on(
         self,
