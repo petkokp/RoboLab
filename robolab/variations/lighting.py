@@ -57,9 +57,7 @@ class FrontDirectionalLightCfg:
     front_directional_light = AssetBaseCfg(
         prim_path="/World/front_directional_light",
         spawn=sim_utils.DistantLightCfg(intensity=3000, angle=0.53, exposure=3),
-        # rot is isaaclab3 XYZW (x,y,z,w). Migrated from the pre-upgrade wxyz value
-        # (0.7071,0,0.7071,0); a directional light's orientation sets its beam direction,
-        # so the unmigrated wxyz was pointing these lights the wrong way under isaaclab 3.0.
+        # rot in isaaclab3 xyzw (directional-light beam direction; migrated from pre-upgrade wxyz)
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.0, 0.7071, 0.0, 0.7071)),
     )
 

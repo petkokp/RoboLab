@@ -614,18 +614,8 @@ class WorldState:
             env_id: None → Tensor(num_envs,) bool, int → bool
         """
         contact_sensor = get_contact_sensor(self.env.scene, body1, body2)
-        # The contact-sensor backend guard (robolab/core/sensors/contact_sensor_utils.py) sets
-        # filter_prim_paths_expr=None on sensors whose PhysX filtered-contact backend failed to
-        # build (a filter body has no contact-capable collider). Reading force_matrix_w on such
-        # an inert sensor dereferences the None backend:
-        #   AttributeError: 'NoneType' object has no attribute 'sensor_count'
-        # (verified by reverting this guard: CRASHTEST BananaOnPlateTask CRASH[step]). Check the
-        # flag explicitly and return "no contact" -- don't catch-all and don't touch the backend.
-        if contact_sensor.cfg.filter_prim_paths_expr is None:
-            force_matrix = None
-        else:
-            force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
-        if force_matrix is None:
+        force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
+        if force_matrix is None:  # static / no-collider surface -> no contact-view backend
             if env_id is not None:
                 return False
             return torch.zeros(self.env.num_envs, dtype=torch.bool, device=self.env.device)
@@ -699,14 +689,7 @@ class WorldState:
             env_id: None → (num_envs, 3), int → (3,)
         """
         contact_sensor, is_reversed = get_contact_sensor_with_order(self.env.scene, body1, body2)
-        # Same inert-sensor case as in_contact() above: filter_prim_paths_expr=None means the
-        # PhysX filtered-contact backend never built, so reading force_matrix_w would raise
-        # AttributeError: 'NoneType' object has no attribute 'sensor_count'. Check explicitly
-        # and return zero force; do not catch-all and do not touch the dead backend.
-        if contact_sensor.cfg.filter_prim_paths_expr is None:
-            force_matrix = None
-        else:
-            force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
+        force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
         if force_matrix is None:
             # No contact-view backend (e.g. a static/no-collider surface) -> zero force.
             if env_id is not None:

@@ -3,13 +3,6 @@
 
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
 
-# Contact-sensor prim-naming invariant (isaacsim6/isaaclab3): PhysX returns a backend-less contact
-# view (-> isaaclab3 crashes in ContactSensor._create_buffers on filter_count) when a filter
-# target's composed prim path repeats the object's own name as a descendant (scene/plate_small/
-# plate_small). RoboLab keeps object/scene USDs free of that self-nesting via
-# scripts/normalize_contact_prim_names.py, so no runtime guard is needed.
-
-
 def create_contact_sensor_cfg(entity_1, entity_2, update_period=0.0, history_length=6, debug_vis=False):
         return ContactSensorCfg(
             prim_path=entity_1,
