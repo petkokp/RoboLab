@@ -68,7 +68,7 @@ class DroidCfg:
     robot = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path= os.path.join(ROBOTS_DIR, "franka_robotiq_2f_85_flattened_mimicfix.usd"),  # mimic-damping fix (stops linkage divergence under arm motion)
+            usd_path= os.path.join(ROBOTS_DIR, "franka_robotiq_2f_85_flattened.usd"),
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,

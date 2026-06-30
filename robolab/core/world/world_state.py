@@ -60,30 +60,42 @@ def _as_torch_tensor(value):
     return value.torch if hasattr(value, "torch") else value
 
 
-# isaacsim6/isaaclab3 compat shim for an isaaclab bug: under use_fabric=True the one-time USD->fabric
-# scale sync (UsdFrameView.get_scales) assumes every prim authors a float3 xformOp:scale and crashes
-# (GfVec3d-from-float TypeError) on prims that omit it or author a scalar. Replace get_scales to coerce
-# missing->(1,1,1) and scalar s->(s,s,s). Verified load-bearing (removing it crashes GrabAFruit at step).
+# isaacsim6/isaaclab3 compat shim for an isaaclab robustness gap in the fabric pose backend.
+# Under use_fabric=True the one-time USD->fabric sync
+#   isaaclab_physx FabricFrameView._sync_fabric_from_usd_once -> self._usd_view.get_scales()
+# reads xformOp:scale into a Vt.Vec3dArray assuming every prim authors a float3 scale
+#   (isaaclab .../sim/views/usd_frame_view.py:325: `scales[idx] = prim.GetAttr("xformOp:scale").Get()`)
+# and raises `GfVec3d from ... float` when a prim's scale comes back scalar/None.
+# This is NOT fixable in our assets: a stage traversal of the built scene finds 199 scale attrs,
+# 0 of them scalar -- the scalar appears DYNAMICALLY at step time (physics replication), after
+# isaaclab's own UsdFrameView.__init__ standardize_xform_ops has already run. So neither asset
+# normalization nor standardize_xform_ops can pre-empt it; the only robust fix is a tolerant reader.
+# We defer to isaaclab's own implementation and only coerce on its exact failure (missing->(1,1,1),
+# uniform scalar s->(s,s,s)). Proven load-bearing: pristine (shim off) crashes at GrabAFruit step 0.
 try:
     from isaaclab.sim.views.usd_frame_view import UsdFrameView as _UFV
 
     if not getattr(_UFV, "_robolab_scale_guard", False):
         import warp as _wp
+        _orig_get_scales = _UFV.get_scales
 
         def _robolab_get_scales(self, indices=None):
-            idxs = self._resolve_indices(indices)
-            out = []
-            for prim_idx in idxs:
-                attr = self._prims[prim_idx].GetAttribute("xformOp:scale")
-                v = attr.Get() if attr else None
-                if v is None:
-                    v = (1.0, 1.0, 1.0)
-                elif isinstance(v, (int, float)):
-                    v = (float(v), float(v), float(v))
-                else:
-                    v = (float(v[0]), float(v[1]), float(v[2]))
-                out.append(v)
-            return _wp.array(np.array(out, dtype=np.float32), dtype=_wp.float32, device=self._device)
+            try:
+                return _orig_get_scales(self, indices)  # isaaclab's own path whenever it works
+            except TypeError:
+                idxs = self._resolve_indices(indices)
+                out = []
+                for prim_idx in idxs:
+                    attr = self._prims[prim_idx].GetAttribute("xformOp:scale")
+                    v = attr.Get() if attr else None
+                    if v is None:
+                        v = (1.0, 1.0, 1.0)
+                    elif isinstance(v, (int, float)):
+                        v = (float(v), float(v), float(v))
+                    else:
+                        v = (float(v[0]), float(v[1]), float(v[2]))
+                    out.append(v)
+                return _wp.array(np.array(out, dtype=np.float32), dtype=_wp.float32, device=self._device)
 
         _UFV.get_scales = _robolab_get_scales
         _UFV._robolab_scale_guard = True
