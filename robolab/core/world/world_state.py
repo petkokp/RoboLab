@@ -692,51 +692,6 @@ class WorldState:
 
         return net_force
 
-    def _geometric_supported(
-        self,
-        obj: str,
-        surface: str,
-        vert_tol: float = 0.04,
-        xy_tol: float = 0.02,
-        lin_speed_thresh: float = 0.1,
-    ) -> torch.Tensor:
-        """Geometric fallback for ``is_supported_on_surface`` (returns (N,) bool tensor).
-
-        Contact-force sensing is unavailable for static / no-collider surfaces under
-        IsaacSim 6 + fabric (the contact view has no backend for an AssetBase surface),
-        so a banana resting on a static plate reports zero contact force. This proxy
-        decides "supported" purely from geometry + motion: the object is supported if
-        it is (a) roughly stationary, (b) its lowest point sits at/below the surface
-        top but not below the surface base (resting on or settled into it), and
-        (c) its centroid is within the surface's xy footprint. Live physics poses are
-        used throughout (via get_bbox/get_velocity), so it is fabric-safe.
-
-        The tolerances are empirical, not from a reference: vert_tol=0.04 m (4 cm slack on
-        the rest gap, covering bbox/penetration noise), xy_tol=0.02 m (2 cm footprint slack),
-        lin_speed_thresh=0.1 m/s ("settled" cutoff). They are deliberately loose because this
-        is only an OR-ed fallback for the static-surface case where contact sensing returns
-        nothing — it can make a true placement winnable but, being ANDed with the caller's own
-        position predicate, will not by itself pass a wrong placement.
-        """
-        obj_corners, obj_centroid = self.get_bbox(obj, env_id=None)      # (N,8,3), (N,3)
-        surf_corners, _ = self.get_bbox(surface, env_id=None)           # (N,8,3)
-        vel = self.get_velocity(obj, env_id=None)                       # (N,6)
-
-        obj_min_z = obj_corners[:, :, 2].min(dim=1).values             # (N,)
-        surf_max_z = surf_corners[:, :, 2].max(dim=1).values
-        surf_min_z = surf_corners[:, :, 2].min(dim=1).values
-        gap = obj_min_z - surf_max_z
-        adjacent = (gap <= vert_tol) & (obj_min_z >= surf_min_z - vert_tol)
-
-        sx_min = surf_corners[:, :, 0].min(dim=1).values; sx_max = surf_corners[:, :, 0].max(dim=1).values
-        sy_min = surf_corners[:, :, 1].min(dim=1).values; sy_max = surf_corners[:, :, 1].max(dim=1).values
-        in_x = (obj_centroid[:, 0] >= sx_min - xy_tol) & (obj_centroid[:, 0] <= sx_max + xy_tol)
-        in_y = (obj_centroid[:, 1] >= sy_min - xy_tol) & (obj_centroid[:, 1] <= sy_max + xy_tol)
-
-        speed = torch.norm(vel[:, :3], dim=-1)
-        stationary = speed < lin_speed_thresh
-        return adjacent & in_x & in_y & stationary  # (N,) bool
-
     def is_supported_on_surface(
         self,
         obj: str,
@@ -747,11 +702,6 @@ class WorldState:
     ):
         """
         Check if an object is stably supported on a surface by analyzing contact forces.
-
-        Falls back to a geometric rest test (``_geometric_supported``) when contact
-        sensing is unavailable, e.g. a static/no-collider surface such as a plate under
-        IsaacSim 6 + fabric. The original (IsaacSim 4) pipeline relied solely on contact
-        forces; that path is kept and OR-ed with the geometric proxy.
 
         Args:
             env_id: None → Tensor(num_envs,) bool, int → bool
@@ -766,15 +716,7 @@ class WorldState:
                 and contact_force[2].item() > 0
                 and contact_force[2].item() >= force_magnitude * cos_theta_max
             )
-            if contact_ok:
-                return True
-            # Geometric fallback. It reads get_bbox/get_velocity (paths the old contact-only
-            # test never touched), which can raise on exotic/non-mesh surfaces -> fall back to
-            # "not supported" so a quirky surface can't crash the episode.
-            try:
-                return bool(self._geometric_supported(obj, surface)[env_id].item())
-            except Exception:
-                return False
+            return contact_ok
         else:
             # Vectorized: contact_force is (N, 3)
             force_magnitude = torch.norm(contact_force, dim=-1)  # (N,)
@@ -783,12 +725,7 @@ class WorldState:
             force_upward = fz > 0
             in_cone = fz >= force_magnitude * cos_theta_max
             contact_ok = has_contact & force_upward & in_cone  # (N,) bool tensor
-            # Geometric fallback (see scalar branch): conservative "not supported" on error.
-            try:
-                geom_ok = self._geometric_supported(obj, surface)
-            except Exception:
-                geom_ok = torch.zeros_like(contact_ok)
-            return contact_ok | geom_ok
+            return contact_ok
 
     def get_objects_supported_on(
         self,
