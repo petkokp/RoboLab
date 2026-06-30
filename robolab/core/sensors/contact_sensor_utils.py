@@ -1,56 +1,19 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
 
-# --- isaacsim6/isaaclab3 compat shim: contact-sensor backend guard (upstream strictness) ---
-# WHAT CRASHES (exact, verified by reverting this guard):
-#   CRASHTEST GrabAFruitTask: CRASH[create_env] AttributeError:
-#   'NoneType' object has no attribute 'filter_count'
-# WHERE (isaaclab_physx/sensors/contact_sensor/contact_sensor.py):
-#   _initialize_impl (:324) calls physics_sim_view.create_rigid_contact_view(body, filter_patterns=...);
-#   when a FILTER target body has no contact-capable collider, PhysX returns a view whose
-#   ._backend is None. Then _create_buffers (:357) does
-#     self._num_filter_shapes = self.contact_view.filter_count if self.cfg.filter_prim_paths_expr else 0
-#   and `filter_count` dereferences the None backend -> AttributeError, aborting scene setup.
-# WHY RoboLab hits it: create_contact_sensors() (below) builds O(n^2) pairwise gripper-object
-#   and object-object sensors across the whole contact_object_list; some scene objects carry no
-#   contact-capable collider. isaaclab3 validates that the SENSOR body has PhysxContactReportAPI
-#   (_initialize_impl :311 raises otherwise) but does NOT validate the FILTER targets, so a
-#   no-collider filter crashes instead of reporting zero contact -- this is genuinely stricter
-#   than the pre-upgrade (isaacsim4) behaviour, not a renamed API.
-# FIX: probe contact_view.filter_count at _create_buffers time (the definitive moment PhysX has
-#   decided); if it's backend-less, drop the filters so the sensor initialises INERT (the
-#   downstream get_contact_force/in_contact in world_state.py treat filter_prim_paths_expr=None
-#   as zero-contact). Reacting to the real backend state is why this is preferred over pre-
-#   filtering sensors by guessing which objects PhysX will give a backend (see PR discussion).
-try:
-    from isaaclab_physx.sensors.contact_sensor.contact_sensor import (
-        ContactSensor as _ISCS,
-    )
-
-    if not getattr(_ISCS, "_robolab_backend_guard", False):
-        _orig_create_buffers = _ISCS._create_buffers
-
-        def _guarded_create_buffers(self):
-            try:
-                if self.cfg.filter_prim_paths_expr:
-                    _ = self.contact_view.filter_count  # probe the PhysX backend
-            except AttributeError:
-                print(
-                    f"[robolab/contact] no contact-view backend for "
-                    f"'{self.cfg.prim_path}' (filters={self.cfg.filter_prim_paths_expr}); "
-                    f"initializing this sensor WITHOUT filters (inert)",
-                    flush=True,
-                )
-                self.cfg.filter_prim_paths_expr = None
-            return _orig_create_buffers(self)
-
-        _ISCS._create_buffers = _guarded_create_buffers
-        _ISCS._robolab_backend_guard = True
-except Exception as _e:  # pragma: no cover - defensive
-    print(f"[robolab/contact] could not install contact-sensor backend guard: {_e}")
+# Contact-sensor prim-naming invariant (isaacsim6/isaaclab3):
+# PhysX builds each contact sensor's filtered contact view by matching the filter prim path
+# against the stage, and returns a backend-less view -- which makes isaaclab3 crash in
+# ContactSensor._create_buffers ("AttributeError: 'NoneType' object has no attribute
+# 'filter_count'") -- when a contact filter target's COMPOSED prim path repeats the object's own
+# name as a descendant (e.g. scene/plate_small/plate_small). That duplication can originate in
+# object USDs whose defaultPrim self-nests AND in scene USDs that author nested overrides on the
+# inner prim names. RoboLab keeps every object/scene USD free of that self-nesting -- see
+# scripts/normalize_contact_prim_names.py, a one-time idempotent migration that renames any
+# descendant sharing its object-root's name. With that invariant held, no runtime workaround is
+# needed (verified: contact sensors bind on every task with the guard removed, poses unchanged).
 
 
 def create_contact_sensor_cfg(entity_1, entity_2, update_period=0.0, history_length=6, debug_vis=False):
