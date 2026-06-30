@@ -610,10 +610,6 @@ class WorldState:
         """
         contact_sensor = get_contact_sensor(self.env.scene, body1, body2)
         force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
-        if force_matrix is None:  # static / no-collider surface -> no contact-view backend
-            if env_id is not None:
-                return False
-            return torch.zeros(self.env.num_envs, dtype=torch.bool, device=self.env.device)
         if env_id is not None:
             return torch.any(torch.abs(force_matrix[env_id]) > force_threshold).item()
         else:
@@ -685,11 +681,6 @@ class WorldState:
         """
         contact_sensor, is_reversed = get_contact_sensor_with_order(self.env.scene, body1, body2)
         force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
-        if force_matrix is None:
-            # No contact-view backend (e.g. a static/no-collider surface) -> zero force.
-            if env_id is not None:
-                return torch.zeros(3, dtype=torch.float32, device=self.env.device)
-            return torch.zeros(self.env.num_envs, 3, dtype=torch.float32, device=self.env.device)
         if env_id is not None:
             net_force = force_matrix[env_id].sum(dim=(0, 1))  # (3,)
         else:
