@@ -386,20 +386,29 @@ class StreamingHDF5DatasetFileHandler(DatasetFileHandlerBase):
                     key_group, sub_key, sub_value, datasets_cache
                 )
         else:
-            # Compat shim (isaacsim6/isaaclab3 upgrade): some recorder leaves now
-            # arrive as python lists/np arrays rather than tensors. Convert when we
-            # safely can; skip (don't crash) leaves we can't serialize as an array.
+            # isaaclab3 (isaaclab/utils/datasets/episode_data.py:111-115) accumulates each
+            # recorded field as a LIST of per-timestep tensors (it appends per step to avoid a
+            # slow torch.cat) instead of the single stacked [T, ...] tensor the pre-upgrade
+            # writer assumed. Stack the list back into one [T, ...] array along the time axis,
+            # moving tensors off-GPU first (np.asarray cannot convert a CUDA tensor directly).
             if isinstance(value, torch.Tensor):
-                np_data = value.cpu().numpy()
-            else:
+                np_data = value.detach().cpu().numpy()
+            elif isinstance(value, (list, tuple)):
+                if len(value) == 0:
+                    return
                 try:
-                    np_data = np.asarray(value)
-                except Exception:
-                    print(f"[StreamingHDF5] skip unserializable recorder leaf '{group.name}/{key}' ({type(value).__name__})")
+                    np_data = np.stack([
+                        v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else np.asarray(v)
+                        for v in value
+                    ])
+                except Exception as e:
+                    print(f"[StreamingHDF5] skip unstackable recorder leaf '{group.name}/{key}' ({e})")
                     return
-                if np_data.dtype == object or np_data.ndim == 0:
-                    print(f"[StreamingHDF5] skip non-array recorder leaf '{group.name}/{key}' (dtype={np_data.dtype}, ndim={np_data.ndim})")
-                    return
+            else:
+                np_data = np.asarray(value)
+            if np_data.dtype == object or np_data.ndim == 0:
+                print(f"[StreamingHDF5] skip non-array recorder leaf '{group.name}/{key}' (dtype={np_data.dtype}, ndim={np_data.ndim})")
+                return
             cache_key = f"{group.name}/{key}"
 
             if cache_key in datasets_cache:
