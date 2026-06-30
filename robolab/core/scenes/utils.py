@@ -92,17 +92,9 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
             )
     from robolab.core.utils.usd_utils import get_usd_objects_info
     scene_objects = get_usd_objects_info(scene_path)
-    # isaacsim6/isaaclab3 fix: dynamic SUPPORT FIXTURES (tables, bins, crates, baskets,
-    # shelves, …) fail collision against dynamic objects. A dynamic fixture authored at
-    # table height tunnels through the (now-kinematic) table and FALLS TO THE FLOOR — e.g.
-    # grey_bin spawns at z=0.05 (table top) but settles ~0.6 m low on the GroundPlane, so
-    # floor-bin tasks (BananasInBin*) became physically unreachable for the policy (0/N vs
-    # the isaacsim4 100% baseline, where the bin rested at table height). Support fixtures
-    # never move, so pin every fixture-sourced rigid body kinematic -> it loads as
-    # AssetBaseCfg with working kinematic-vs-dynamic collisions and STAYS at its authored
-    # (isaacsim4) resting pose. Fixtures are loaded from `assets/.../fixtures/`; manipulated
-    # objects are loaded from `assets/.../objects/` and are left dynamic (untouched). This
-    # generalizes the prior table-only / per-scene `kinematicEnabled=1` overrides to EVERY scene.
+    # isaacsim6/isaaclab3 fix: pin support fixtures (tables/bins/crates from assets/.../fixtures/)
+    # kinematic so dynamic objects don't tunnel through the kinematic table and fall to the floor
+    # (which made floor-bin tasks unreachable); manipulated objects/ stay dynamic.
     for _obj in scene_objects:
         if not _obj.get('rigid_body'):
             continue

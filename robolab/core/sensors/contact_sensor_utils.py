@@ -3,17 +3,11 @@
 
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
 
-# Contact-sensor prim-naming invariant (isaacsim6/isaaclab3):
-# PhysX builds each contact sensor's filtered contact view by matching the filter prim path
-# against the stage, and returns a backend-less view -- which makes isaaclab3 crash in
-# ContactSensor._create_buffers ("AttributeError: 'NoneType' object has no attribute
-# 'filter_count'") -- when a contact filter target's COMPOSED prim path repeats the object's own
-# name as a descendant (e.g. scene/plate_small/plate_small). That duplication can originate in
-# object USDs whose defaultPrim self-nests AND in scene USDs that author nested overrides on the
-# inner prim names. RoboLab keeps every object/scene USD free of that self-nesting -- see
-# scripts/normalize_contact_prim_names.py, a one-time idempotent migration that renames any
-# descendant sharing its object-root's name. With that invariant held, no runtime workaround is
-# needed (verified: contact sensors bind on every task with the guard removed, poses unchanged).
+# Contact-sensor prim-naming invariant (isaacsim6/isaaclab3): PhysX returns a backend-less contact
+# view (-> isaaclab3 crashes in ContactSensor._create_buffers on filter_count) when a filter
+# target's composed prim path repeats the object's own name as a descendant (scene/plate_small/
+# plate_small). RoboLab keeps object/scene USDs free of that self-nesting via
+# scripts/normalize_contact_prim_names.py, so no runtime guard is needed.
 
 
 def create_contact_sensor_cfg(entity_1, entity_2, update_period=0.0, history_length=6, debug_vis=False):

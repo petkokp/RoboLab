@@ -60,24 +60,10 @@ def _as_torch_tensor(value):
     return value.torch if hasattr(value, "torch") else value
 
 
-# --- isaacsim6/isaaclab3 compat shim: UsdFrameView.get_scales (upstream fragility) ----
-# WHAT CRASHES (exact, verified by reverting this guard):
-#   CRASHTEST GrabAFruitTask: CRASH[step] TypeError: No registered converter was able to
-#   produce a C++ rvalue of type ...GfVec3d from this Python object of type float
-# WHERE (real call chain, from the traceback -- NOT a direct get_world_poses call):
-#   WorldState.get_pose (below) -> FabricFrameView.get_world_poses
-#     -> FabricFrameView._sync_fabric_from_usd_once   (isaaclab_physx/sim/views/fabric_frame_view.py:444)
-#     -> UsdFrameView.get_scales                      (isaaclab/sim/views/usd_frame_view.py:325)
-# Under use_fabric=True the fabric view does a ONE-TIME scale sync from USD on the first
-# pose query. get_scales there does `scales[idx] = prim.GetAttribute("xformOp:scale").Get()`
-# straight into a Vt.Vec3dArray -- it ASSUMES every prim authors a 3-vector scale. Many
-# RoboLab fixture/object prims omit xformOp:scale (-> .Get() is None) or author it as a
-# scalar double (-> .Get() is a float); both are valid USD but break that assignment. This
-# is a genuine isaaclab robustness gap (the constructor only validates xformOpOrder, not the
-# scale TYPE), not a renamed/migrated API -- so we replace get_scales with a version that
-# coerces missing->(1,1,1) and scalar s->(s,s,s). Re-author-the-USDs is the only patch-free
-# alternative (add explicit float3 scale to every static prim across the asset library);
-# rejected as far more invasive (dozens of LFS assets) for the same result.
+# isaacsim6/isaaclab3 compat shim for an isaaclab bug: under use_fabric=True the one-time USD->fabric
+# scale sync (UsdFrameView.get_scales) assumes every prim authors a float3 xformOp:scale and crashes
+# (GfVec3d-from-float TypeError) on prims that omit it or author a scalar. Replace get_scales to coerce
+# missing->(1,1,1) and scalar s->(s,s,s). Verified load-bearing (removing it crashes GrabAFruit at step).
 try:
     from isaaclab.sim.views.usd_frame_view import UsdFrameView as _UFV
 
@@ -446,10 +432,8 @@ class WorldState:
         """
         body = self.get_body(body_name)
         if isinstance(body, AssetBase):
-            # root_quat_w is WXYZ (scalar-first) at runtime, but every downstream geometry
-            # consumer (quat_apply / transform_points / matrix_from_quat) is XYZW. Convert
-            # once here so all predicates get a correct quaternion (this is THE fix for the
-            # containment/stacking 0-scores; it replaces the per-predicate workarounds).
+            # root_quat_w is wxyz (scalar-first); downstream geometry (quat_apply/transform_points)
+            # expects xyzw -> convert once here (fixes containment/stacking 0-scores).
             if env_id is not None:
                 pos = body.data.root_pos_w[env_id].clone().detach()
                 quat = body.data.root_quat_w[env_id].clone().detach()[..., [1, 2, 3, 0]]
