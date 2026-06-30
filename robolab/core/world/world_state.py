@@ -21,9 +21,11 @@ from typing import Any, Callable
 import isaaclab.sim.utils as sim_utils
 import numpy as np
 import torch
+import warp as wp
 from isaaclab.assets import Articulation, AssetBase, DeformableObject, RigidObject
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.sensors.frame_transformer.frame_transformer import FrameTransformer
+from isaaclab.sim.views.usd_frame_view import UsdFrameView
 from isaaclab.utils.math import transform_points
 from pxr import Gf, Usd, UsdGeom
 
@@ -60,47 +62,29 @@ def _as_torch_tensor(value):
     return value.torch if hasattr(value, "torch") else value
 
 
-# isaacsim6/isaaclab3 compat shim for an isaaclab robustness gap in the fabric pose backend.
-# Under use_fabric=True the one-time USD->fabric sync
-#   isaaclab_physx FabricFrameView._sync_fabric_from_usd_once -> self._usd_view.get_scales()
-# reads xformOp:scale into a Vt.Vec3dArray assuming every prim authors a float3 scale
-#   (isaaclab .../sim/views/usd_frame_view.py:325: `scales[idx] = prim.GetAttr("xformOp:scale").Get()`)
-# and raises `GfVec3d from ... float` when a prim's scale comes back scalar/None.
-# This is NOT fixable in our assets: a stage traversal of the built scene finds 199 scale attrs,
-# 0 of them scalar -- the scalar appears DYNAMICALLY at step time (physics replication), after
-# isaaclab's own UsdFrameView.__init__ standardize_xform_ops has already run. So neither asset
-# normalization nor standardize_xform_ops can pre-empt it; the only robust fix is a tolerant reader.
-# We defer to isaaclab's own implementation and only coerce on its exact failure (missing->(1,1,1),
-# uniform scalar s->(s,s,s)). Proven load-bearing: pristine (shim off) crashes at GrabAFruit step 0.
-try:
-    from isaaclab.sim.views.usd_frame_view import UsdFrameView as _UFV
+# isaacsim6 compat: UsdFrameView.get_scales (called by the fabric pose sync) reads xformOp:scale as a
+# float3 and crashes when physics replication leaves a prim's scale scalar/None. Coerce on that failure.
+_orig_get_scales = UsdFrameView.get_scales
 
-    if not getattr(_UFV, "_robolab_scale_guard", False):
-        import warp as _wp
-        _orig_get_scales = _UFV.get_scales
 
-        def _robolab_get_scales(self, indices=None):
-            try:
-                return _orig_get_scales(self, indices)  # isaaclab's own path whenever it works
-            except TypeError:
-                idxs = self._resolve_indices(indices)
-                out = []
-                for prim_idx in idxs:
-                    attr = self._prims[prim_idx].GetAttribute("xformOp:scale")
-                    v = attr.Get() if attr else None
-                    if v is None:
-                        v = (1.0, 1.0, 1.0)
-                    elif isinstance(v, (int, float)):
-                        v = (float(v), float(v), float(v))
-                    else:
-                        v = (float(v[0]), float(v[1]), float(v[2]))
-                    out.append(v)
-                return _wp.array(np.array(out, dtype=np.float32), dtype=_wp.float32, device=self._device)
+def _tolerant_get_scales(self, indices=None):
+    try:
+        return _orig_get_scales(self, indices)
+    except TypeError:
+        scales = []
+        for i in self._resolve_indices(indices):
+            v = self._prims[i].GetAttribute("xformOp:scale").Get()
+            if v is None:
+                v = (1.0, 1.0, 1.0)
+            elif isinstance(v, (int, float)):
+                v = (float(v), float(v), float(v))
+            else:
+                v = tuple(v)
+            scales.append(v)
+        return wp.array(np.array(scales, dtype=np.float32), dtype=wp.float32, device=self._device)
 
-        _UFV.get_scales = _robolab_get_scales
-        _UFV._robolab_scale_guard = True
-except Exception as _e:  # pragma: no cover - defensive
-    print(f"[robolab/compat] could not install get_scales guard: {_e}")
+
+UsdFrameView.get_scales = _tolerant_get_scales
 
 
 def get_world(env: ManagerBasedRLEnv=None):
@@ -444,8 +428,7 @@ class WorldState:
         """
         body = self.get_body(body_name)
         if isinstance(body, AssetBase):
-            # root_quat_w is wxyz (scalar-first); downstream geometry (quat_apply/transform_points)
-            # expects xyzw -> convert once here (fixes containment/stacking 0-scores).
+            # root_quat_w is wxyz; downstream geometry expects xyzw.
             if env_id is not None:
                 pos = body.data.root_pos_w[env_id].clone().detach()
                 quat = body.data.root_quat_w[env_id].clone().detach()[..., [1, 2, 3, 0]]

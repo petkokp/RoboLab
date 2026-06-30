@@ -51,10 +51,7 @@ _WRIST_CAM = TiledCameraCfg(
         horizontal_aperture=5.376,
         vertical_aperture=3.024,
     ),
-    # Offset reproduces the baked USD `wrist_camera_flipped` prim
-    # (.../base_link/wrist_camera_flipped): look ~ (0.333, 0.011, -0.943) steep down-forward
-    # at the workspace. This is the policy-calibrated DROID wrist mount; the prior committed
-    # rot pointed the camera sideways (+Y) in isaacsim6 because base_link loads re-oriented.
+    # DROID wrist-camera mount pose (rot is xyzw).
     offset=TiledCameraCfg.OffsetCfg(
         pos=(0.011, -0.031, -0.074), rot=(-0.5813, -0.5733, 0.4157, 0.4007), convention="opengl"
     ),
@@ -82,10 +79,7 @@ class DroidCfg:
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0, 0, 0),
-            # Un-inverts the arm under isaaclab3. The conventional wxyz identity (1,0,0,0)
-            # loads the flattened robot upside-down (gripper below the table, out of reach) --
-            # isaaclab3 reads InitialStateCfg.rot as xyzw, so (0,0,0,1) is the upright identity.
-            # Verified load-bearing: (1,0,0,0) scores 0/6 on BananaInBowl & GrabAFruit vs 6/6.
+            # isaaclab3 reads rot as xyzw; (0,0,0,1) is the upright identity.
             rot=(0, 0, 0, 1),
             joint_pos={
                 "panda_joint1": 0.0,

@@ -57,7 +57,7 @@ class FrontDirectionalLightCfg:
     front_directional_light = AssetBaseCfg(
         prim_path="/World/front_directional_light",
         spawn=sim_utils.DistantLightCfg(intensity=3000, angle=0.53, exposure=3),
-        # rot in isaaclab3 xyzw (directional-light beam direction; migrated from pre-upgrade wxyz)
+        # rot is xyzw
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.0, 0.7071, 0.0, 0.7071)),
     )
 
@@ -67,7 +67,7 @@ class BehindDirectionalLightCfg:
     behind_directional_light = AssetBaseCfg(
         prim_path="/World/behind_directional_light",
         spawn=sim_utils.DistantLightCfg(intensity=3000, angle=0.53, exposure=3),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.0, -0.7071, 0.0, 0.7071)),  # XYZW (was wxyz (0.7071,0,-0.7071,0))
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.0, -0.7071, 0.0, 0.7071)),
     )
 
 @configclass
@@ -76,7 +76,7 @@ class TopDownDirectionalLightCfg:
     top_down_directional_light = AssetBaseCfg(
         prim_path="/World/top_down_directional_light",
         spawn=sim_utils.DistantLightCfg(intensity=3000, angle=0.53, exposure=0.0),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.0, 0.0, 0.0, 1.0)),  # XYZW identity (was wxyz identity (1,0,0,0) -> under XYZW it pointed UP, not down)
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.0, 0.0, 0.0, 1.0)),
     )
 
 @configclass
@@ -85,7 +85,7 @@ class LeftDirectionalLightCfg:
     left_directional_light = AssetBaseCfg(
         prim_path="/World/left_directional_light",
         spawn=sim_utils.DistantLightCfg(intensity=3000, angle=0.53, exposure=3),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(-0.7071, 0.0, 0.0, 0.7071)),  # XYZW (was wxyz (0.7071,-0.7071,0,0))
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(-0.7071, 0.0, 0.0, 0.7071)),
     )
 
 @configclass
@@ -94,5 +94,5 @@ class RightDirectionalLightCfg:
     right_directional_light = AssetBaseCfg(
         prim_path="/World/right_directional_light",
         spawn=sim_utils.DistantLightCfg(intensity=3000, angle=0.53, exposure=3),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.7071, 0.0, 0.0, 0.7071)),  # XYZW (was wxyz (0.7071,0.7071,0,0))
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0), rot=(0.7071, 0.0, 0.0, 0.7071)),
     )

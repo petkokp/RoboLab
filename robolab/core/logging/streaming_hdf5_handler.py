@@ -386,29 +386,8 @@ class StreamingHDF5DatasetFileHandler(DatasetFileHandlerBase):
                     key_group, sub_key, sub_value, datasets_cache
                 )
         else:
-            # isaaclab3 (isaaclab/utils/datasets/episode_data.py:111-115) accumulates each
-            # recorded field as a LIST of per-timestep tensors (it appends per step to avoid a
-            # slow torch.cat) instead of the single stacked [T, ...] tensor the pre-upgrade
-            # writer assumed. Stack the list back into one [T, ...] array along the time axis,
-            # moving tensors off-GPU first (np.asarray cannot convert a CUDA tensor directly).
-            if isinstance(value, torch.Tensor):
-                np_data = value.detach().cpu().numpy()
-            elif isinstance(value, (list, tuple)):
-                if len(value) == 0:
-                    return
-                try:
-                    np_data = np.stack([
-                        v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else np.asarray(v)
-                        for v in value
-                    ])
-                except Exception as e:
-                    print(f"[StreamingHDF5] skip unstackable recorder leaf '{group.name}/{key}' ({e})")
-                    return
-            else:
-                np_data = np.asarray(value)
-            if np_data.dtype == object or np_data.ndim == 0:
-                print(f"[StreamingHDF5] skip non-array recorder leaf '{group.name}/{key}' (dtype={np_data.dtype}, ndim={np_data.ndim})")
-                return
+            # isaaclab3 EpisodeData stores each field as a list of per-step tensors; stack into [T, ...].
+            np_data = np.stack([v.detach().cpu().numpy() for v in value])
             cache_key = f"{group.name}/{key}"
 
             if cache_key in datasets_cache:

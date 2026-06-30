@@ -1,32 +1,11 @@
-"""Universal, permanent fix for the isaacsim6/isaaclab3 contact-view backend crash.
+"""Rename USD prims that share their contact-filter root's name.
 
-Invariant enforced: no descendant prim may share the name of its TOP-LEVEL (subtree-root)
-prim -- i.e. the prim that a contact filter targets (asset defaultPrim, or scene/<obj>).
-(Deeper duplicates that don't match the object-root name -- e.g. snickers_bar's collider
-meshes, apple_01's Looks/apple -- are harmless and left untouched; verified apple_01 binds a
-contact backend despite its deep duplicate.)
+In isaacsim6, when a contact-filter target (scene/<obj>) has a descendant also named <obj>,
+PhysX returns a backend-less contact view and isaaclab3 crashes in ContactSensor._create_buffers.
+Rename any descendant primSpec matching an ancestor's name to <name>_u<n> (deepest first),
+per layer so each file edits only its own specs. Idempotent.
 
-Why: PhysX builds each contact sensor's filtered contact view by matching the filter prim
-path against the stage. When a contact filter target (a dynamic object at scene/<obj>) has a
-DESCENDANT prim also named <obj>, PhysX returns a backend-less contact view and isaaclab3
-crashes in ContactSensor._create_buffers (AttributeError on filter_count). That duplication
-comes from BOTH layers:
-  - object USDs whose defaultPrim self-nests:  /plate_small/plate_small/plate_small
-  - scene USDs with stale/orphaned overrides that recreate the name as typeless prims:
-      def "plate_small" (payload=...) { over "plate_small_inst" { over "plate_small" {
-        over "plate_small" {...} } } }    (the asset no longer has those inner prims, so the
-        override only materializes empty typeless prims -- it moves nothing real)
-
-This script operates per-LAYER (not on the composed stage), so each file only edits its OWN
-specs: asset files fix asset self-nesting; scene files fix their own orphaned overrides. It
-renames any primSpec whose name equals an ancestor primSpec's name to `<name>_u<n>` (deepest
-first; Sdf.BatchNamespaceEdit relocates internal targets). Top-level object prims (whose name
-the contact filter targets, e.g. scene/plate_small) are never renamed -- only descendants that
-duplicate an ancestor name. Idempotent.
-
-Usage:
     python scripts/normalize_contact_prim_names.py [ROOT ...] [--apply]
-    (default ROOTs: assets/objects and assets/scenes relative to repo root)
 """
 import glob
 import os
@@ -56,17 +35,7 @@ def descendants_named(spec, name, out):
 
 def has_asset_arc(spec):
     # an "object root" instantiates an asset (payload or reference)
-    try:
-        if spec.hasPayloads or spec.hasReferences:
-            return True
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        if spec.payloadList.GetAddedOrExplicitItems() or spec.referenceList.GetAddedOrExplicitItems():
-            return True
-    except Exception:  # noqa: BLE001
-        pass
-    return False
+    return spec.hasPayloads or spec.hasReferences
 
 
 def object_root_specs(stage, layer):
@@ -92,13 +61,8 @@ def object_root_specs(stage, layer):
 
 total = 0
 for f in files:
-    try:
-        stage = Usd.Stage.Open(f)            # robust format detection (Sdf.FindOrOpen is not)
-        layer = stage.GetRootLayer()         # this file's OWN specs only (no composed asset prims)
-    except Exception as e:  # noqa: BLE001
-        print(f"OPEN_ERR\t{f}\t{e!r}"); continue
-    if layer is None:
-        continue
+    stage = Usd.Stage.Open(f)
+    layer = stage.GetRootLayer()             # this file's OWN specs only (no composed asset prims)
     dups, seen = [], set()
     for rspec in object_root_specs(stage, layer):
         tmp = []

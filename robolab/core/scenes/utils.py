@@ -92,15 +92,10 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
             )
     from robolab.core.utils.usd_utils import get_usd_objects_info
     scene_objects = get_usd_objects_info(scene_path)
-    # isaacsim6/isaaclab3 fix: pin support fixtures (tables/bins/crates from assets/.../fixtures/)
-    # kinematic so dynamic objects don't tunnel through the kinematic table and fall to the floor
-    # (which made floor-bin tasks unreachable); manipulated objects/ stay dynamic.
+    # Support fixtures (assets/fixtures/) must be kinematic: in isaacsim6 a dynamic object
+    # resting on a dynamic fixture tunnels through it and falls to the floor.
     for _obj in scene_objects:
-        if not _obj.get('rigid_body'):
-            continue
-        _name = str(_obj.get('name', "")).lower()
-        _payload = str(_obj.get('payload', "") or "").lower()
-        if "table" in _name or "fixtures/" in _payload:
+        if _obj.get('rigid_body') and "fixtures/" in str(_obj.get('payload') or "").lower():
             _obj['kinematic'] = True
     dynamic_bodies = [obj for obj in scene_objects if obj['rigid_body'] and not obj.get('kinematic', False)]
     kinematic_bodies = [obj for obj in scene_objects if obj['rigid_body'] and obj.get('kinematic', False)]
