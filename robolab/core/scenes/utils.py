@@ -130,12 +130,13 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
         if objects_of_interest is None and name not in contact_object_list:
             contact_object_list.append(name)
 
+        w, x, y, z = obj_info['rotation']  # parser returns wxyz (USD/Gf); isaaclab init_state.rot is xyzw
         asset = RigidObjectCfg(
             prim_path=f"{{ENV_REGEX_NS}}/scene/{name}",
             spawn=None,
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=obj_info['position'],
-                rot=obj_info['rotation'],
+                rot=(x, y, z, w),
                 lin_vel=(0.0, 0.0, 0.0),
                 ang_vel=(0.0, 0.0, 0.0),
             ),
