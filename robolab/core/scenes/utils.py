@@ -88,6 +88,12 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
             spawn = sim_utils.UsdFileCfg(
                 usd_path=str(scene_path),
                 activate_contact_sensors=True,
+                # isaacsim6 compat: these PhysX settings were global on sim.physx in isaacsim5 but
+                # moved to per-actor in isaaclab3, and the migration dropped them -> objects fell back
+                # to weak defaults (max_depenetration 3.0, auto contact offset) and the gripper sank
+                # into and stuck in them. Restore the isaacsim5 values on the scene's rigid bodies.
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(max_depenetration_velocity=100.0),
+                collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=0.02, rest_offset=0.01),
                 ),
             )
     from robolab.core.utils.usd_utils import get_usd_objects_info
