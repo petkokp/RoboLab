@@ -58,37 +58,6 @@ from robolab.core.world.world_state import get_world
 from robolab.eval.base_client import InferenceClient
 
 
-def _diag_log_contact(env, step, path):
-    """Diagnostic (gated by ROBOLAB_DIAG_LOG): per-step gripper->object contact force paired with
-    finger->object distance, for env 0. Reading force + penetration together distinguishes tunneling
-    (force~0 while finger overlaps) from soft-contact (high force, finger still sinking)."""
-    from robolab.core.sensors.contact_sensor_utils import get_contact_sensors
-    robot = env.scene["robot"]
-    if not hasattr(_diag_log_contact, "_fidx"):
-        _diag_log_contact._fidx = [i for i, n in enumerate(robot.body_names)
-                                   if "inner_finger" in n and "knuckle" not in n]
-    ft = robot.data.body_pos_w[0, _diag_log_contact._fidx, :]
-    gj = float(robot.data.joint_pos[0, -1])
-    rows = []
-    for name, s in get_contact_sensors(env.scene).items():
-        if not name.startswith("gripper__") or name.endswith("all_objs"):
-            continue
-        obj = name.split("__", 1)[1]
-        if obj not in env.scene.rigid_objects:
-            continue
-        oc = env.scene.rigid_objects[obj].data.root_pos_w[0]
-        d = float((ft - oc).norm(dim=-1).min())
-        f = 0.0
-        try:
-            fm = s.data.force_matrix_w
-            if fm is not None:
-                f = float(fm[0].reshape(-1, 3).norm(dim=-1).max())
-        except Exception:
-            pass
-        rows.append(f"{step},{obj},{d:.4f},{f:.3f},{gj:.4f}")
-    if rows:
-        with open(path, "a") as fh:
-            fh.write("\n".join(rows) + "\n")
 
 
 def run_episode(env, env_cfg, episode, client: InferenceClient, *, headless=False, save_videos=True, video_mode="all"):
@@ -189,13 +158,6 @@ def run_episode(env, env_cfg, episode, client: InferenceClient, *, headless=Fals
             timer.start("env_step")
             obs, reward, term, trunc, info = env.step(actions)
             timer.stop("env_step")
-
-            if os.environ.get("ROBOLAB_DIAG_LOG"):
-                try:
-                    _diag_log_contact(env, step, os.environ["ROBOLAB_DIAG_LOG"])
-                except Exception as _e:
-                    if step == 0:
-                        print("DIAG_LOG err:", _e)
 
             # Collect per-env subtask info (list of dicts, one per env)
             per_env_infos = get_all_env_subtask_infos(env)
