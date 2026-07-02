@@ -8,7 +8,6 @@ environment configurations, including observations, actions, events,
 rewards, terminations, and the main RobolabDefaultEnvCfg.
 """
 
-import os
 
 import isaaclab.envs.mdp as mdp
 from isaaclab.envs import ManagerBasedRLEnvCfg
@@ -176,17 +175,8 @@ class RobolabDefaultEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics.max_velocity_iteration_count = 1
         self.sim.physics.bounce_threshold_velocity = 0.2
         self.sim.physics.solver_type = 1
-        # isaacsim5 forced num_position_iterations=32 for ALL bodies; isaaclab3 defaults the min
-        # iteration count to 1 (adaptive), so scene rigid objects solve with only ~16 iterations ->
-        # softer contacts, and the compliant gripper penetrates and sticks in objects. Restore the
-        # isaacsim5 floor globally (a global field in isaaclab3 PhysxCfg, so it's symmetric across
-        # robot + objects -> no per-actor contact-offset gap). (env var toggles it for A/B only.)
-        if os.environ.get("ROBOLAB_PHYSFIX", "1") != "0":
-            self.sim.physics.min_position_iteration_count = 32
-            # PRIMARY gripper-penetration fix. isaaclab3's articulation solver solves link CONTACTS
-            # before the JOINT DRIVES by default (solve_articulation_contact_last=False), so every
-            # iteration the compliant (stiffness 0.2) finger drive gets the last word and re-pushes
-            # the finger into the grasped object -> it penetrates and sticks. isaaclab3 added this
-            # flag specifically for gripper penetration with soft/sub-optimally-tuned joints
-            # (IsaacLab PR #3502); solving contacts last gives the contact the final correction.
-            self.sim.physics.solve_articulation_contact_last = True
+        # Restore the isaacsim5 solver-iteration floor (isaaclab3 defaults it to 1) and solve
+        # articulation contacts after the joint drives, so the compliant gripper finger stops
+        # penetrating and sticking in grasped objects (IsaacLab PR #3502).
+        self.sim.physics.min_position_iteration_count = 32
+        self.sim.physics.solve_articulation_contact_last = True
