@@ -496,7 +496,11 @@ class WorldState:
 
         if as_matrix:
             from robolab.core.utils.geometry_utils import pose_from_pos_quat
-            pose_w = pose_from_pos_quat(pos, quat)
+            # pose_from_pos_quat -> matrix_from_quat (isaaclab) expects wxyz, but AssetBase
+            # bodies are returned here as xyzw (see reorder above) -> convert back for the matrix.
+            # Only _spatial_condition uses get_pose(as_matrix=True), and it relies on the
+            # frame-of-reference (robot=AssetBase) rotation, which this makes correct.
+            pose_w = pose_from_pos_quat(pos, quat[..., [3, 0, 1, 2]])
             return pose_w
         else:
             return pos, quat
