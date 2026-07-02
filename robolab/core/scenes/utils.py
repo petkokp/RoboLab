@@ -83,14 +83,16 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
     objects_of_interest = list(objects_of_interest_tuple) if objects_of_interest_tuple else None
 
     scene_dict = {}
-    # isaacsim6 compat: these PhysX settings were global on sim.physx in isaacsim5 but moved to
-    # per-actor in isaaclab3, and the migration dropped them -> objects fell back to weak defaults
-    # (max_depenetration 3.0, auto contact offset) and the gripper sank into and stuck in them.
-    # Restore the isaacsim5 values on the scene's rigid bodies.
+    # isaacsim6 compat: isaacsim5 set these on the global sim.physx (baseline commit 7d45d74 base.py:
+    # num_position_iterations=32, max_depenetration_velocity=100.0); isaaclab3 moved them per-actor and
+    # the migration dropped them, so scene objects fell back to weak schema defaults (iterations floored
+    # only at min_position_iteration_count, max_depenetration_velocity=None -> USD/PhysX fallback) and the
+    # gripper sank into and stuck in them. Restore the isaacsim5 global values on the scene rigid bodies.
+    # Schema defaults: https://isaac-sim.github.io/IsaacLab/main/source/api/lab/isaaclab.sim.schemas.html
     _spawn_kwargs = dict(usd_path=str(scene_path), activate_contact_sensors=True)
     _spawn_kwargs["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(
-        max_depenetration_velocity=100.0,      # isaacsim5 global was 100 (isaacsim6 default 3.0)
-        solver_position_iteration_count=32,    # isaacsim5 forced 32; scene objects otherwise solve ~16
+        max_depenetration_velocity=100.0,      # = isaacsim5 global (7d45d74 base.py:174)
+        solver_position_iteration_count=32,    # = isaacsim5 global num_position_iterations (7d45d74)
     )
     scene = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/scene",

@@ -175,8 +175,16 @@ class RobolabDefaultEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics.max_velocity_iteration_count = 1
         self.sim.physics.bounce_threshold_velocity = 0.2
         self.sim.physics.solver_type = 1
-        # Restore the isaacsim5 solver-iteration floor (isaaclab3 defaults it to 1) and solve
-        # articulation contacts after the joint drives, so the compliant gripper finger stops
-        # penetrating and sticking in grasped objects (IsaacLab PR #3502).
+        # min_position_iteration_count: isaacsim5 forced num_position_iterations=32 globally
+        # (baseline commit 7d45d74 base.py); isaaclab3's PhysxCfg defaults this to 1 and the solver
+        # clamps each actor's requested count to [min, max], so scene objects that don't request more
+        # solve with too few iterations -> soft contacts the gripper sinks into. Restore the 32 floor.
+        # Default ref: https://isaac-sim.github.io/IsaacLab/main/source/api/lab/isaaclab.sim.schemas.html
         self.sim.physics.min_position_iteration_count = 32
+        # solve_articulation_contact_last: solve articulation contacts AFTER the joint drives. PhysX's
+        # default ordering favours the constraint resolved last, which destabilises stiff gripper joints
+        # and lets the finger penetrate grasped objects. isaaclab default False; added specifically for
+        # gripping in IsaacLab PR #3502 (merged 2025-10-15, v2.3, present in our 3.0.0b2).
+        #   PR:   https://github.com/isaac-sim/IsaacLab/pull/3502
+        #   PhysX: https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/dev_guide/guides/articulation_stability_guide.html#articulation-solver-order
         self.sim.physics.solve_articulation_contact_last = True

@@ -69,9 +69,11 @@ class DroidCfg:
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
-                # isaacsim5 set max_depenetration_velocity=100 GLOBALLY (so the fingers had it too);
-                # isaacsim6 droid.py capped the robot at 5.0 -> a finger that penetrates a pinched/
-                # constrained object depenetrates at only 5 u/s and stays stuck inside it. Restore 100.
+                # NOTE: isaacsim5 droid.py set the finger max_depenetration_velocity to 5.0
+                # (baseline commit 7d45d74 robolab/robots/droid.py:71); isaaclab3's RigidBodyPropertiesCfg
+                # default is None (USD/PhysX fallback). 100.0 is an EMPIRICAL increase, NOT an isaacsim5
+                # restore, meant to let a finger escape a pinched object faster. TODO: ablate now that
+                # solve_articulation_contact_last is enabled -- may be removable or revertible to 5.0.
                 max_depenetration_velocity=100.0,
             ),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
