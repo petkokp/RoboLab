@@ -428,15 +428,15 @@ class WorldState:
         """
         body = self.get_body(body_name)
         if isinstance(body, AssetBase):
-            # root_quat_w is wxyz; downstream geometry expects xyzw.
+            # root_quat_w is already xyzw in isaaclab3 (canonical); no reorder needed.
             if env_id is not None:
                 pos = body.data.root_pos_w[env_id].clone().detach()
-                quat = body.data.root_quat_w[env_id].clone().detach()[..., [1, 2, 3, 0]]
+                quat = body.data.root_quat_w[env_id].clone().detach()
                 if is_relative:
                     pos = pos - self.env.scene.env_origins[env_id]
             else:
                 pos = body.data.root_pos_w.clone().detach()  # (N, 3)
-                quat = body.data.root_quat_w.clone().detach()[..., [1, 2, 3, 0]]  # wxyz->xyzw
+                quat = body.data.root_quat_w.clone().detach()  # (N, 4) xyzw
                 if is_relative:
                     pos = pos - self.env.scene.env_origins  # (N, 3)
         elif _is_xform_prim_like(body):
@@ -496,11 +496,8 @@ class WorldState:
 
         if as_matrix:
             from robolab.core.utils.geometry_utils import pose_from_pos_quat
-            # pose_from_pos_quat -> matrix_from_quat (isaaclab) expects wxyz, but AssetBase
-            # bodies are returned here as xyzw (see reorder above) -> convert back for the matrix.
-            # Only _spatial_condition uses get_pose(as_matrix=True), and it relies on the
-            # frame-of-reference (robot=AssetBase) rotation, which this makes correct.
-            pose_w = pose_from_pos_quat(pos, quat[..., [3, 0, 1, 2]])
+            # get_pose returns xyzw; matrix_from_quat (isaaclab) also takes xyzw — no reorder.
+            pose_w = pose_from_pos_quat(pos, quat)
             return pose_w
         else:
             return pos, quat
