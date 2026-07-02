@@ -181,8 +181,12 @@ class RobolabDefaultEnvCfg(ManagerBasedRLEnvCfg):
         #   [1] https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/core/environments/base.py#L171
         #   [2] https://github.com/isaac-sim/IsaacLab/blob/c372ae9/source/isaaclab/isaaclab/sim/simulation_cfg.py#L47
         self.sim.physics.min_position_iteration_count = 32
-        # Solve articulation contacts after the joint drives; stops stiff gripper joints from
-        # penetrating grasped objects. isaaclab default False [1]; added for gripping in PR #3502 [2].
+        # NOT a restore: this flag did not exist in isaacsim5 -- added in isaaclab v2.3 / Isaac Sim
+        # 5.1+, default False [1]. Enabled as the vendor's purpose-built fix for our exact symptom:
+        # the compliant finger's joint drive overrides the contact each solver iteration and re-enters
+        # the grasped object; solving articulation contacts last prevents that [2][3]. Correctness here
+        # is EMPIRICAL (True-vs-False ablation), not historical -- see the gripper ablation results.
         #   [1] https://github.com/isaac-sim/IsaacLab/blob/c372ae9/source/isaaclab/isaaclab/sim/simulation_cfg.py#L186
         #   [2] https://github.com/isaac-sim/IsaacLab/pull/3502
+        #   [3] https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/dev_guide/guides/articulation_stability_guide.html#articulation-solver-order
         self.sim.physics.solve_articulation_contact_last = True
