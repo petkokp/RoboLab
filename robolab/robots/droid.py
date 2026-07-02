@@ -69,12 +69,12 @@ class DroidCfg:
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
-                # NOTE: isaacsim5 droid.py set the finger max_depenetration_velocity to 5.0
-                # (baseline commit 7d45d74 robolab/robots/droid.py:71); isaaclab3's RigidBodyPropertiesCfg
-                # default is None (USD/PhysX fallback). 100.0 is an EMPIRICAL increase, NOT an isaacsim5
-                # restore, meant to let a finger escape a pinched object faster. TODO: ablate now that
-                # solve_articulation_contact_last is enabled -- may be removable or revertible to 5.0.
-                max_depenetration_velocity=100.0,
+                # Finger depenetration cap (m/s). Kept gentle on purpose: a high cap ejects the small
+                # grasp-contact penetration and destabilises the grasp. isaacsim5 value [1] (isaaclab3
+                # default is None -> USD/PhysX fallback [2]).
+                #   [1] https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/robots/droid.py#L71
+                #   [2] https://github.com/isaac-sim/IsaacLab/blob/c372ae9/source/isaaclab/isaaclab/sim/schemas/schemas_cfg.py#L98
+                max_depenetration_velocity=5.0,
             ),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 enabled_self_collisions=False,

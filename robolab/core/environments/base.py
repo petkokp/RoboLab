@@ -175,16 +175,14 @@ class RobolabDefaultEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics.max_velocity_iteration_count = 1
         self.sim.physics.bounce_threshold_velocity = 0.2
         self.sim.physics.solver_type = 1
-        # min_position_iteration_count: isaacsim5 forced num_position_iterations=32 globally
-        # (baseline commit 7d45d74 base.py); isaaclab3's PhysxCfg defaults this to 1 and the solver
-        # clamps each actor's requested count to [min, max], so scene objects that don't request more
-        # solve with too few iterations -> soft contacts the gripper sinks into. Restore the 32 floor.
-        # Default ref: https://isaac-sim.github.io/IsaacLab/main/source/api/lab/isaaclab.sim.schemas.html
+        # Floor for solver position iterations (PhysX clamps each actor's count to [min, max]).
+        # isaacsim5 forced 32 [1]; isaaclab3 default is 1 [2] -> scene objects under-solve and the
+        # gripper sinks into soft contacts. Restore the 32 floor.
+        #   [1] https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/core/environments/base.py#L171
+        #   [2] https://github.com/isaac-sim/IsaacLab/blob/c372ae9/source/isaaclab/isaaclab/sim/simulation_cfg.py#L47
         self.sim.physics.min_position_iteration_count = 32
-        # solve_articulation_contact_last: solve articulation contacts AFTER the joint drives. PhysX's
-        # default ordering favours the constraint resolved last, which destabilises stiff gripper joints
-        # and lets the finger penetrate grasped objects. isaaclab default False; added specifically for
-        # gripping in IsaacLab PR #3502 (merged 2025-10-15, v2.3, present in our 3.0.0b2).
-        #   PR:   https://github.com/isaac-sim/IsaacLab/pull/3502
-        #   PhysX: https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/dev_guide/guides/articulation_stability_guide.html#articulation-solver-order
+        # Solve articulation contacts after the joint drives; stops stiff gripper joints from
+        # penetrating grasped objects. isaaclab default False [1]; added for gripping in PR #3502 [2].
+        #   [1] https://github.com/isaac-sim/IsaacLab/blob/c372ae9/source/isaaclab/isaaclab/sim/simulation_cfg.py#L186
+        #   [2] https://github.com/isaac-sim/IsaacLab/pull/3502
         self.sim.physics.solve_articulation_contact_last = True

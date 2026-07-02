@@ -83,16 +83,15 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
     objects_of_interest = list(objects_of_interest_tuple) if objects_of_interest_tuple else None
 
     scene_dict = {}
-    # isaacsim6 compat: isaacsim5 set these on the global sim.physx (baseline commit 7d45d74 base.py:
-    # num_position_iterations=32, max_depenetration_velocity=100.0); isaaclab3 moved them per-actor and
-    # the migration dropped them, so scene objects fell back to weak schema defaults (iterations floored
-    # only at min_position_iteration_count, max_depenetration_velocity=None -> USD/PhysX fallback) and the
-    # gripper sank into and stuck in them. Restore the isaacsim5 global values on the scene rigid bodies.
-    # Schema defaults: https://isaac-sim.github.io/IsaacLab/main/source/api/lab/isaaclab.sim.schemas.html
+    # isaacsim5 set these on the global sim.physx; isaaclab3 moved them per-actor and the migration
+    # dropped them for scene objects, which then solve with too-weak defaults and the gripper sinks in.
+    # Restore the isaacsim5 globals on the scene's rigid bodies:
+    #   [1] max_depenetration_velocity=100: https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/core/environments/base.py#L174
+    #   [2] num_position_iterations=32:      https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/core/environments/base.py#L171
     _spawn_kwargs = dict(usd_path=str(scene_path), activate_contact_sensors=True)
     _spawn_kwargs["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(
-        max_depenetration_velocity=100.0,      # = isaacsim5 global (7d45d74 base.py:174)
-        solver_position_iteration_count=32,    # = isaacsim5 global num_position_iterations (7d45d74)
+        max_depenetration_velocity=100.0,      # = isaacsim5 global [1]
+        solver_position_iteration_count=32,    # = isaacsim5 global [2]
     )
     scene = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/scene",
