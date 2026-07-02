@@ -704,8 +704,10 @@ def upright(world, object: str, tolerance: float = 0.1, up_axis: str = "z", env_
     axis_map = {"x": 0, "y": 1, "z": 2}
     axis_idx = axis_map[up_axis.lower()]
 
+    # get_pose returns xyzw (isaaclab3 canonical): isaaclab v3.0 switched all quaternions wxyz->xyzw
+    # (align with PhysX/Warp/Newton). Ref: https://github.com/isaac-sim/IsaacLab/issues/5186
     if env_id is not None:
-        x, y, z, w = quat[0], quat[1], quat[2], quat[3]  # get_pose returns xyzw
+        x, y, z, w = quat[0], quat[1], quat[2], quat[3]  # xyzw
         R = torch.tensor([
             [1 - 2*(y*y + z*z), 2*(x*y - w*z), 2*(x*z + w*y)],
             [2*(x*y + w*z), 1 - 2*(x*x + z*z), 2*(y*z - w*x)],
@@ -720,7 +722,7 @@ def upright(world, object: str, tolerance: float = 0.1, up_axis: str = "z", env_
             print(f"upright: '{object}' upright (up_axis={up_axis}, tol={tolerance}) -> {result}")
         return result
     else:
-        # get_pose returns xyzw (world_state.get_pose reorders wxyz->xyzw)
+        # get_pose returns xyzw (isaaclab3 canonical, no reorder -- see ref above)
         x, y, z, w = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
         # Build rotation matrices column for axis_idx
         if axis_idx == 0:

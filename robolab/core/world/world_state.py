@@ -420,7 +420,7 @@ class WorldState:
         raise ValueError(f"[WorldState] Prim at path '{prim_path}' not found in scene")
 
     def get_pose(self, body_name: str, is_relative: bool = True, as_matrix: bool = False, env_id: int | None = None) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
-        """Get pose in xyz, wxyz format.
+        """Get pose in xyz, xyzw format (isaaclab3 canonical quaternion order).
 
         Args:
             env_id: None → (num_envs, 3) and (num_envs, 4), int → (3,) and (4,)
@@ -428,7 +428,10 @@ class WorldState:
         """
         body = self.get_body(body_name)
         if isinstance(body, AssetBase):
-            # root_quat_w is already xyzw in isaaclab3 (canonical); no reorder needed.
+            # root_quat_w is already xyzw in isaaclab3 -- no reorder. isaaclab v3.0 switched ALL
+            # quaternions wxyz->xyzw (align with PhysX/Warp/Newton); isaaclab 2.x was wxyz, so RoboLab's
+            # old wxyz->xyzw reorder corrupted the already-xyzw quat. Verified: container/spatial tasks
+            # pass only with root_quat_w untouched. Ref: https://github.com/isaac-sim/IsaacLab/issues/5186
             if env_id is not None:
                 pos = body.data.root_pos_w[env_id].clone().detach()
                 quat = body.data.root_quat_w[env_id].clone().detach()

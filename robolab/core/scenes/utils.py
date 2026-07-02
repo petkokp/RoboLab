@@ -137,7 +137,9 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
         if objects_of_interest is None and name not in contact_object_list:
             contact_object_list.append(name)
 
-        w, x, y, z = obj_info['rotation']  # parser returns wxyz (USD/Gf); isaaclab init_state.rot is xyzw
+        # USD/Gf parser returns wxyz; isaaclab3 init_state.rot is xyzw, so reorder below. isaaclab v3.0
+        # switched all quaternions wxyz->xyzw: https://github.com/isaac-sim/IsaacLab/issues/5186
+        w, x, y, z = obj_info['rotation']  # wxyz
         asset = RigidObjectCfg(
             prim_path=f"{{ENV_REGEX_NS}}/scene/{name}",
             spawn=None,
