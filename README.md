@@ -46,10 +46,6 @@ This runs the install-verification suite end-to-end: isaaclab importable, all ta
 ### Run without a policy
 
 ```bash
-# This is needed on our cluster, it's a quirk of the dynamic linker
-export GPU_FOUNDATION_DEPS="$PWD/.venv/lib/python3.12/site-packages/isaacsim/extscache/omni.gpu_foundation-0.0.0+6312fa25.lx64.r.cp312/bin/deps"
-export LD_LIBRARY_PATH="$GPU_FOUNDATION_DEPS:${LD_LIBRARY_PATH:-}"
-
 # Run an empty episode with random actions
 python examples/run_empty.py --headless
 
