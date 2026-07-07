@@ -154,7 +154,6 @@ Full documentation is at **[docs/README.md](docs/README.md)**, covering:
 
 - **Disk space**: ~8 GB (assets account for ~7 GB)
 - **GPU**: NVIDIA RTX GPU required. Recommend 48GB+ VRAM. See [Isaac Lab's hardware requirements](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html#system-requirements) for recommended GPUs and VRAM.
-- **Cluster runtime checks**: Isaac Sim runtime commands require a Slurm GPU allocation on the target cluster. Dependency resolution and import-only checks can run outside Slurm, but Kit launch failures from a non-GPU login shell are not meaningful migration failures.
 - **Speed**: 30 GPU hours / 100 tasks, 1.4 it/s (assuming ~200ms inference step)
 
 ## License
