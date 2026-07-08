@@ -41,17 +41,23 @@ class InitialStateRecorder(RecorderTerm):
                     self._cameras[name] = sensor
 
     def _get_camera_poses(self, env_ids: Sequence[int] | None = None):
-        """Get camera poses for specified environment IDs."""
+        """Get camera poses for specified environment IDs.
+
+        Position is returned in the env-local frame (relative to each env's scene
+        origin), consistent with the env-local object poses recorded alongside it.
+        Orientation is unaffected by the per-env translation and stays in world frame.
+        """
         camera_poses = {}
+        origins = self._env.scene.env_origins[:, 0:3]
         for name, camera in self._cameras.items():
             if env_ids is not None:
                 camera_poses[name] = {
-                    "position": camera.data.pos_w[env_ids].clone(),  # (len(env_ids), 3)
+                    "position": (camera.data.pos_w[env_ids] - origins[env_ids]).clone(),  # (len(env_ids), 3)
                     "orientation": camera.data.quat_w_ros[env_ids].clone(),  # (len(env_ids), 4)
                 }
             else:
                 camera_poses[name] = {
-                    "position": camera.data.pos_w.clone(),  # (num_envs, 3)
+                    "position": (camera.data.pos_w - origins).clone(),  # (num_envs, 3)
                     "orientation": camera.data.quat_w_ros.clone(),  # (num_envs, 4)
                 }
         return camera_poses
@@ -103,7 +109,11 @@ class PostStepEndEffectorPoseRecorder(RecorderTerm):
 
     Uses the articulation's body state directly (no FrameTransformer needed).
     Records position, orientation (quaternion), linear velocity, and angular velocity
-    in world frame for the specified end effector body.
+    for the specified end effector body.
+
+    Position is recorded in the env-local frame (relative to each env's scene origin),
+    matching the ``ee_pos`` observation term. Orientation and velocities are unaffected
+    by the per-env origin (a static translation offset) and remain in the world frame.
     """
 
     def __init__(self, cfg: "PostStepEndEffectorPoseRecorderCfg", env):
@@ -139,7 +149,10 @@ class PostStepEndEffectorPoseRecorder(RecorderTerm):
             return None, None
 
         # Get body pose from articulation (already computed by physics, no extra cost)
-        ee_pos = self._robot.data.body_pos_w[:, self._ee_body_idx, :]  # (num_envs, 3)
+        # Shift position into the env-local frame so multi-env recordings are comparable
+        # (matches the ee_pos observation term). env_origins is (num_envs, 3).
+        ee_pos = self._robot.data.body_pos_w[:, self._ee_body_idx, :]  # (num_envs, 3), world frame
+        ee_pos = ee_pos - self._env.scene.env_origins[:, 0:3]  # (num_envs, 3), env-local frame
         ee_quat = self._robot.data.body_quat_w[:, self._ee_body_idx, :]  # (num_envs, 4)
 
         # Get body velocity from articulation
@@ -157,11 +170,12 @@ class PostStepEndEffectorPoseRecorder(RecorderTerm):
 class InitialCameraExtrinsicsRecorder(RecorderTerm):
     """Recorder term that records camera extrinsics (position and orientation) after reset.
 
-    Records the world pose of all cameras in the scene after initialization/reset,
+    Records the pose of all cameras in the scene after initialization/reset,
     similar to how InitialStateRecorder captures initial object poses.
 
     The camera pose consists of:
-    - Position (pos_w): World position of the camera (x, y, z)
+    - Position: env-local position of the camera (x, y, z), relative to each env's
+      scene origin (consistent with the env-local object poses)
     - Orientation (quat_w_ros): World orientation as quaternion in ROS convention (x, y, z, w)
 
     This is useful for recording camera viewpoint at the start of each episode,
@@ -193,17 +207,23 @@ class InitialCameraExtrinsicsRecorder(RecorderTerm):
             print(f"[InitialCameraExtrinsicsRecorder] No cameras found in scene.")
 
     def _get_camera_poses(self, env_ids: Sequence[int] | None = None):
-        """Get camera poses for specified environment IDs."""
+        """Get camera poses for specified environment IDs.
+
+        Position is returned in the env-local frame (relative to each env's scene
+        origin), consistent with the env-local object poses recorded alongside it.
+        Orientation is unaffected by the per-env translation and stays in world frame.
+        """
         camera_poses = {}
+        origins = self._env.scene.env_origins[:, 0:3]
         for name, camera in self._cameras.items():
             if env_ids is not None:
                 camera_poses[name] = {
-                    "position": camera.data.pos_w[env_ids].clone(),  # (len(env_ids), 3)
+                    "position": (camera.data.pos_w[env_ids] - origins[env_ids]).clone(),  # (len(env_ids), 3)
                     "orientation": camera.data.quat_w_ros[env_ids].clone(),  # (len(env_ids), 4)
                 }
             else:
                 camera_poses[name] = {
-                    "position": camera.data.pos_w.clone(),  # (num_envs, 3)
+                    "position": (camera.data.pos_w - origins).clone(),  # (num_envs, 3)
                     "orientation": camera.data.quat_w_ros.clone(),  # (num_envs, 4)
                 }
         return camera_poses
