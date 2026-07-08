@@ -34,6 +34,8 @@ env.close()
 | `events` | `dict` or configclass | `None` | Event configuration to merge into the environment (e.g., pose randomization, camera variation) |
 | `instruction_type` | `str` | `"default"` | Instruction variant to use when the task defines multiple variants |
 | `policy` | `str` | `None` | Policy backend name, stored on `env_cfg` for downstream use |
+| `renderer` | `str` | `"realtime"` | RTX renderer: `"realtime"` (RaytracedLighting) or `"pathtracing"` (PathTracing). Recorded in `env_cfg.json` (see [Renderer Selection](#renderer-selection)) |
+| `rendering_mode` | `str` | `None` | Realtime quality preset (`"performance"`, `"balanced"`, `"quality"`); `None` leaves IsaacLab's default (`balanced`) |
 | `eye` | `tuple` | `None` | Camera eye position override |
 | `lookat` | `tuple` | `None` | Camera look-at position override |
 
@@ -378,11 +380,24 @@ The built-in `policies/pi0_family/run.py` supports the full set of evaluation fe
 | `--enable-subtask` | Enable subtask progress checking (records score, reason, subtask log) | `False` |
 | `--record-image-data` | Record image observations to HDF5 | `False` |
 | `--video-mode MODE` | Which videos to save: `all` (sensor + viewport), `viewport` only, `sensor` only, or `none` | `all` |
+| `--renderer MODE` | RTX renderer: `realtime` (RaytracedLighting) or `pathtracing` (PathTracing). See [Renderer Selection](#renderer-selection). | `realtime` |
+| `--rendering-type MODE` | Realtime quality preset: `performance`, `balanced`, or `quality`. No effect under `--renderer pathtracing`. | IsaacLab default (`balanced`) |
 | `--randomize-background` | Sample a random non-default background per task at registration time. The chosen texture is recorded in each task's `env_cfg.json`. See [Backgrounds — Per-Run Random Background per Task](background.md#per-run-random-background-per-task). | `False` |
 | `--background-seed N` | Seed for reproducible per-task background sampling. Used with `--randomize-background`. | `None` |
 | `--headless` | Run without live display window. **Recommended for multi-task runs** — see [GPU VRAM leak in non-headless mode](debug.md#gpu-vram-leak-in-non-headless-mode-across-environment-reloads) | `False` |
 | `--enable-verbose` | Verbose output | `False` |
 | `--enable-debug` | Debug output | `False` |
+
+### Renderer Selection
+
+Both `--renderer` modes are RTX renderers; the flag selects which one IsaacLab configures via [`RenderCfg`](https://isaac-sim.github.io/IsaacLab/main/source/api/lab/isaaclab.sim.html#isaaclab.sim.RenderCfg) (it sets the `/rtx/rendermode` carb value).
+
+- **`realtime`** (`RaytracedLighting`) — the default. Fast, deterministic per frame, and compatible with the tiled multi-env cameras the eval pipeline uses. This is what you want for evaluation.
+- **`pathtracing`** (`PathTracing`) — a physically-based renderer with accurate global illumination, ambient occlusion, and soft shadows. It accumulates samples over successive frames, converging on a *static* scene.
+
+> **Path tracing does affect the eval cameras.** It applies to the tiled `TiledCamera` sensors used for observations and viewport video, not just standalone captures — verified on a settled `num_envs=1` scene, where the tiled viewport output differs from realtime in a GI-consistent way (contact shadows, ambient occlusion, material response), not as noise. Two caveats remain: (1) PT accumulates samples on a *static* scene, so during a moving rollout — where the arm and objects change every frame — per-frame convergence drops and frames can be noisier than a settled capture; (2) it is substantially slower than realtime. So realtime stays the default and recommended renderer for large-N evaluation, while path tracing suits higher-fidelity or slow/static captures. The cleanest path-traced stills come from the standalone-viewport tools `misc/compare_renderers.py` and `misc/capture_scene_image.py`, which accumulate on a frozen scene.
+
+`--rendering-type` is a quality preset for the realtime renderer only. The resolved renderer is recorded in every run's `env_cfg.json` (top-level `renderer`, plus `sim.render.carb_settings["/rtx/rendermode"]`) for provenance. For the underlying settings, see the [Omniverse RTX Renderer documentation](https://docs.omniverse.nvidia.com/materials-and-rendering/latest/rtx-renderer.html).
 
 **Examples:**
 
@@ -407,6 +422,9 @@ python policies/gr00t/run.py --remote-host 10.0.0.1 --remote-port 5555
 
 # Use a specific instruction variant
 python policies/pi0_family/run.py --task BananaInBowlTask --instruction-type vague
+
+# Render with the path tracer (standalone viewport only; see Renderer Selection)
+python policies/pi0_family/run.py --task BananaInBowlTask --renderer pathtracing
 
 # Resume a previous run (skips completed episodes automatically)
 python policies/pi0_family/run.py --output-folder-name 2026-01-24_15-35-59_pi05
