@@ -33,6 +33,7 @@ docs/doxygen/xml/*
 **/data/
 **/output/
 videos/
+misc/paper/last_frames/
 *.code-workspace
 pyrightconfig.json
 
