@@ -45,13 +45,13 @@ def render_stage_frame(app,
         embedded camera settings. This prevents the "far away" rendering issue
         caused by inconsistent camera intrinsics in USD files.
     """
-    import omni.isaac.core.utils.prims as prim_utils
+    import isaacsim.core.utils.prims as prim_utils
     import omni.usd
     from isaacsim.core.api import World
     from isaacsim.core.api.objects.ground_plane import GroundPlane
     from isaacsim.core.utils.stage import open_stage
     from isaacsim.sensors.camera import Camera
-    from omni.isaac.core.utils.viewports import set_camera_view
+    from isaacsim.core.utils.viewports import set_camera_view
     from pxr import Gf, UsdGeom
 
     _ = open_stage(str(usd_path))

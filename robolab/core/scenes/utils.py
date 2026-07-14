@@ -83,15 +83,27 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
     objects_of_interest = list(objects_of_interest_tuple) if objects_of_interest_tuple else None
 
     scene_dict = {}
+    # isaacsim5 set these on the global sim.physx; isaaclab3 moved them per-actor and the migration
+    # dropped them for scene objects, which then solve with too-weak defaults and the gripper sinks in.
+    # Restore the isaacsim5 globals on the scene's rigid bodies:
+    #   [1] max_depenetration_velocity=100: https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/core/environments/base.py#L174
+    #   [2] num_position_iterations=32:      https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/core/environments/base.py#L171
+    _spawn_kwargs = dict(usd_path=str(scene_path), activate_contact_sensors=True)
+    _spawn_kwargs["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(
+        max_depenetration_velocity=100.0,      # = isaacsim5 global [1]
+        solver_position_iteration_count=32,    # = isaacsim5 global [2]
+    )
     scene = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/scene",
-            spawn = sim_utils.UsdFileCfg(
-                usd_path=str(scene_path),
-                activate_contact_sensors=True,
-                ),
+            spawn=sim_utils.UsdFileCfg(**_spawn_kwargs),
             )
     from robolab.core.utils.usd_utils import get_usd_objects_info
     scene_objects = get_usd_objects_info(scene_path)
+    # Support fixtures (assets/fixtures/) must be kinematic: in isaacsim6 a dynamic object
+    # resting on a dynamic fixture tunnels through it and falls to the floor.
+    for _obj in scene_objects:
+        if _obj.get('rigid_body') and "fixtures/" in str(_obj.get('payload') or "").lower():
+            _obj['kinematic'] = True
     dynamic_bodies = [obj for obj in scene_objects if obj['rigid_body'] and not obj.get('kinematic', False)]
     kinematic_bodies = [obj for obj in scene_objects if obj['rigid_body'] and obj.get('kinematic', False)]
     static_bodies = [obj for obj in scene_objects if not obj['rigid_body']]
@@ -125,12 +137,15 @@ def _scrape_scene_cached(scene_path: str, objects_of_interest_tuple: tuple = Non
         if objects_of_interest is None and name not in contact_object_list:
             contact_object_list.append(name)
 
+        # USD/Gf parser returns wxyz; isaaclab3 init_state.rot is xyzw, so reorder below. isaaclab v3.0
+        # switched all quaternions wxyz->xyzw: https://github.com/isaac-sim/IsaacLab/issues/5186
+        w, x, y, z = obj_info['rotation']  # wxyz
         asset = RigidObjectCfg(
             prim_path=f"{{ENV_REGEX_NS}}/scene/{name}",
             spawn=None,
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=obj_info['position'],
-                rot=obj_info['rotation'],
+                rot=(x, y, z, w),
                 lin_vel=(0.0, 0.0, 0.0),
                 ang_vel=(0.0, 0.0, 0.0),
             ),

@@ -1,6 +1,8 @@
 # Core dependencies
-isaaclab==2.2.0
-torch
+isaaclab[isaacsim]==3.0.0b2
+isaacsim[all,extscache]==6.0.0.1
+torch==2.11.0
+torchvision==0.26.0
 numpy
 gymnasium
 

@@ -8,8 +8,10 @@ environment configurations, including observations, actions, events,
 rewards, terminations, and the main RobolabDefaultEnvCfg.
 """
 
+
 import isaaclab.envs.mdp as mdp
 from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab_physx.physics import PhysxCfg
 from isaaclab.managers import DatasetExportMode, RecorderManagerBaseCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import TerminationTermCfg as DoneTerm
@@ -161,20 +163,30 @@ class RobolabDefaultEnvCfg(ManagerBasedRLEnvCfg):
         self.scene.env_spacing = 2.0
         self.sim.use_fabric = True
 
-        # PhysX settings
-        self.sim.physx.gpu_temp_buffer_capacity = 2**30
-        self.sim.physx.gpu_heap_capacity = 2**30
-        self.sim.physx.gpu_collision_stack_size = 2**30
-        self.sim.physx.enable_ccd = True
-        self.sim.physx.contact_offset = 0.02
-        self.sim.physx.rest_offset = 0.01
-        self.sim.physx.num_position_iterations = 32
-        self.sim.physx.num_velocity_iterations = 1
-        self.sim.physx.bounce_threshold_velocity = 0.2
-        self.sim.physx.max_depenetration_velocity = 100.0
-        self.sim.physx.solver_type = 1
-        self.sim.physx.num_threads = 4
-        self.sim.physx.relaxation = 0.75
-        self.sim.physx.warm_start = 0.4
-        self.sim.physx.shape_collision_distance = 0.0
-        self.sim.physx.shape_collision_margin = 0.0
+        # PhysX settings. Isaac Lab 3 stores backend config under
+        # ``sim.physics`` instead of the Isaac Lab 2 ``sim.physx`` field.
+        if self.sim.physics is None:
+            self.sim.physics = PhysxCfg()
+        self.sim.physics.gpu_temp_buffer_capacity = 2**30
+        self.sim.physics.gpu_heap_capacity = 2**30
+        self.sim.physics.gpu_collision_stack_size = 2**30
+        self.sim.physics.enable_ccd = True
+        self.sim.physics.max_position_iteration_count = 32
+        self.sim.physics.max_velocity_iteration_count = 1
+        self.sim.physics.bounce_threshold_velocity = 0.2
+        self.sim.physics.solver_type = 1
+        # Floor for solver position iterations (PhysX clamps each actor's count to [min, max]).
+        # isaacsim5 forced 32 [1]; isaaclab3 default is 1 [2] -> scene objects under-solve and the
+        # gripper sinks into soft contacts. Restore the 32 floor.
+        #   [1] https://github.com/petkokp/RoboLab/blob/7d45d74/robolab/core/environments/base.py#L171
+        #   [2] https://github.com/isaac-sim/IsaacLab/blob/c372ae9/source/isaaclab/isaaclab/sim/simulation_cfg.py#L47
+        self.sim.physics.min_position_iteration_count = 32
+        # NOT a restore: this flag did not exist in isaacsim5 -- added in isaaclab v2.3 / Isaac Sim
+        # 5.1+, default False [1]. Enabled as the vendor's purpose-built fix for our exact symptom:
+        # the compliant finger's joint drive overrides the contact each solver iteration and re-enters
+        # the grasped object; solving articulation contacts last prevents that [2][3]. Correctness here
+        # is EMPIRICAL (True-vs-False ablation), not historical -- see the gripper ablation results.
+        #   [1] https://github.com/isaac-sim/IsaacLab/blob/c372ae9/source/isaaclab/isaaclab/sim/simulation_cfg.py#L186
+        #   [2] https://github.com/isaac-sim/IsaacLab/pull/3502
+        #   [3] https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/dev_guide/guides/articulation_stability_guide.html#articulation-solver-order
+        self.sim.physics.solve_articulation_contact_last = True

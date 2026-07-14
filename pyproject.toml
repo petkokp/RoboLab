@@ -6,14 +6,15 @@ name = "robolab"
 version = "0.1.0"
 description = "A benchmark for simulation"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 license = {text = "Apache-2.0"}
 authors = [{name = "Xuning Yang"}]
 dependencies = [
     # Core
-    "isaaclab==2.2.0",
-    "isaacsim[all,extscache]==5.0.0",
-    "torch",
+    "isaaclab[isaacsim]==3.0.0b2",
+    "isaacsim[all,extscache]==6.0.0.1",
+    "torch==2.11.0",
+    "torchvision==0.26.0",
     "numpy",
     "gymnasium",
     # Remote inference
@@ -69,16 +70,9 @@ dashboard = ["templates/*.html", "static/*"]
 prerelease = "allow"
 index-strategy = "unsafe-best-match"
 # warp-lang 1.13.0.dev20260418 on pypi.nvidia.com only published the macOS
-# wheel — no Linux build — so any resolver pass that picked it would break
-# `uv sync` on Linux. Exclude that specific version.
+# wheel, so any resolver pass that picked it would break `uv sync` on Linux.
+# Exclude that specific version.
 constraint-dependencies = ["warp-lang != 1.13.0.dev20260418"]
-
-[tool.uv.extra-build-dependencies]
-# flatdict 4.0.1 ships sdist-only and its legacy setup.py needs an older
-# setuptools plus `wheel` to build. Building in an isolated PEP 517 env
-# (i.e. NOT in `no-build-isolation-package`) lets these deps apply
-# deterministically regardless of what's in the project venv.
-flatdict = ["setuptools<81", "wheel"]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
@@ -97,7 +91,7 @@ torchvision = { index = "pytorch-cu128" }
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]

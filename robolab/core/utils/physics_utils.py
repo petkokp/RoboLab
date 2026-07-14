@@ -406,7 +406,7 @@ def add_attributes_to_prim(attribute_dict: dict, root_prim_path: str=None) -> di
 def add_semantics_to_prim(semantic_labels: dict,
                             root_prim_path=None) -> dict:
 
-    from omni.isaac.core.utils.semantics import add_update_semantics, get_semantics
+    from isaacsim.core.utils.semantics import add_update_semantics, get_semantics
     from pxr import Sdf, UsdGeom
 
     data_dict={}

@@ -21,11 +21,12 @@ from typing import Any, Callable
 import isaaclab.sim.utils as sim_utils
 import numpy as np
 import torch
+import warp as wp
 from isaaclab.assets import Articulation, AssetBase, DeformableObject, RigidObject
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.sensors.frame_transformer.frame_transformer import FrameTransformer
+from isaaclab.sim.views.usd_frame_view import UsdFrameView
 from isaaclab.utils.math import transform_points
-from isaacsim.core.prims import XFormPrim
 from pxr import Gf, Usd, UsdGeom
 
 import robolab.constants
@@ -40,6 +41,51 @@ from robolab.core.utils.debug_utils import get_caller_info
 
 # Global factory instance for easy access
 _global_world = None
+
+
+def _is_xform_prim_like(body: Any) -> bool:
+    """Return True for Isaac Sim xform prim wrappers without importing deprecated modules."""
+    return hasattr(body, "get_world_poses") and (
+        hasattr(body, "prims") or hasattr(body, "_prim_paths") or hasattr(body, "count")
+    )
+
+
+def _xform_prim_count(body: Any) -> int:
+    if hasattr(body, "_prim_paths"):
+        return len(body._prim_paths)
+    if hasattr(body, "prims"):
+        return len(body.prims)
+    return body.count
+
+
+def _as_torch_tensor(value):
+    return value.torch if hasattr(value, "torch") else value
+
+
+# isaacsim6 compat: UsdFrameView.get_scales (called by the fabric pose sync) reads xformOp:scale as a
+# float3 and crashes when physics replication leaves a prim's scale scalar/None. Coerce on that failure.
+_orig_get_scales = UsdFrameView.get_scales
+
+
+def _tolerant_get_scales(self, indices=None):
+    try:
+        return _orig_get_scales(self, indices)
+    except TypeError:
+        scales = []
+        for i in self._resolve_indices(indices):
+            v = self._prims[i].GetAttribute("xformOp:scale").Get()
+            if v is None:
+                v = (1.0, 1.0, 1.0)
+            elif isinstance(v, (int, float)):
+                v = (float(v), float(v), float(v))
+            else:
+                v = tuple(v)
+            scales.append(v)
+        return wp.array(np.array(scales, dtype=np.float32), dtype=wp.float32, device=self._device)
+
+
+UsdFrameView.get_scales = _tolerant_get_scales
+
 
 def get_world(env: ManagerBasedRLEnv=None):
     """
@@ -109,7 +155,7 @@ class WorldState:
         return entities
 
     @property
-    def extras(self) -> dict[str, XFormPrim]:
+    def extras(self) -> dict[str, Any]:
         return self.env.scene.extras
 
     @property
@@ -355,9 +401,16 @@ class WorldState:
         """Get USD prim for a body in a specific env. Used internally for init-time
         geometry caching and visualization. Not called per-step."""
         body = self.get_body(body_name)
-        if isinstance(body, XFormPrim):
-            idx = min(env_id, len(body.prims) - 1)
-            return body.prims[idx]
+        if _is_xform_prim_like(body):
+            if hasattr(body, "prims"):
+                idx = min(env_id, len(body.prims) - 1)
+                return body.prims[idx]
+            idx = min(env_id, _xform_prim_count(body) - 1)
+            prim_path = body._prim_paths[idx]
+            prim = sim_utils.find_first_matching_prim(prim_path)
+            if prim is None:
+                raise ValueError(f"[WorldState] Prim at path '{prim_path}' not found in scene")
+            return prim
         prim_path = body.cfg.prim_path
         env_id_str = "env_" + str(env_id)
         prims = sim_utils.find_matching_prims(prim_path)
@@ -367,7 +420,7 @@ class WorldState:
         raise ValueError(f"[WorldState] Prim at path '{prim_path}' not found in scene")
 
     def get_pose(self, body_name: str, is_relative: bool = True, as_matrix: bool = False, env_id: int | None = None) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
-        """Get pose in xyz, wxyz format.
+        """Get pose in xyz, xyzw format (isaaclab3 canonical quaternion order).
 
         Args:
             env_id: None → (num_envs, 3) and (num_envs, 4), int → (3,) and (4,)
@@ -375,6 +428,10 @@ class WorldState:
         """
         body = self.get_body(body_name)
         if isinstance(body, AssetBase):
+            # root_quat_w is already xyzw in isaaclab3 -- no reorder. isaaclab v3.0 switched ALL
+            # quaternions wxyz->xyzw (align with PhysX/Warp/Newton); isaaclab 2.x was wxyz, so RoboLab's
+            # old wxyz->xyzw reorder corrupted the already-xyzw quat. Verified: container/spatial tasks
+            # pass only with root_quat_w untouched. Ref: https://github.com/isaac-sim/IsaacLab/issues/5186
             if env_id is not None:
                 pos = body.data.root_pos_w[env_id].clone().detach()
                 quat = body.data.root_quat_w[env_id].clone().detach()
@@ -382,11 +439,11 @@ class WorldState:
                     pos = pos - self.env.scene.env_origins[env_id]
             else:
                 pos = body.data.root_pos_w.clone().detach()  # (N, 3)
-                quat = body.data.root_quat_w.clone().detach()  # (N, 4)
+                quat = body.data.root_quat_w.clone().detach()  # (N, 4) xyzw
                 if is_relative:
                     pos = pos - self.env.scene.env_origins  # (N, 3)
-        elif isinstance(body, XFormPrim):
-            num_prims = len(body._prim_paths) if hasattr(body, '_prim_paths') else body.count
+        elif _is_xform_prim_like(body):
+            num_prims = _xform_prim_count(body)
             if env_id is not None:
                 # Clamp index — static extras may have fewer prims than envs
                 idx = min(env_id, num_prims - 1)
@@ -442,6 +499,7 @@ class WorldState:
 
         if as_matrix:
             from robolab.core.utils.geometry_utils import pose_from_pos_quat
+            # get_pose returns xyzw; matrix_from_quat (isaaclab) also takes xyzw — no reorder.
             pose_w = pose_from_pos_quat(pos, quat)
             return pose_w
         else:
@@ -454,7 +512,7 @@ class WorldState:
             env_id: None → (num_envs, 6), int → (6,)
         """
         body = self.get_body(body_name)
-        if isinstance(body, XFormPrim):
+        if _is_xform_prim_like(body):
             if env_id is None:
                 return torch.zeros(self.env.num_envs, 6, dtype=torch.float32, device=self.env.device)
             return torch.zeros(6, dtype=torch.float32, device=self.env.device)
@@ -555,16 +613,15 @@ class WorldState:
             env_id: None → Tensor(num_envs,) bool, int → bool
         """
         contact_sensor = get_contact_sensor(self.env.scene, body1, body2)
+        force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
         if env_id is not None:
-            force_matrix = contact_sensor.data.force_matrix_w[env_id]
-            return torch.any(torch.abs(force_matrix) > force_threshold).item()
+            return torch.any(torch.abs(force_matrix[env_id]) > force_threshold).item()
         else:
             # force_matrix_w documented shape: (num_envs, num_bodies, num_filter_bodies, 3).
             # The reduction below assumes exactly that. Fail loudly if IsaacLab
             # ever returns a different rank — silent shape drift here would
             # collapse the env axis and report cross-env contact (every env in
             # the batch reports True iff any one env has contact).
-            force_matrix = contact_sensor.data.force_matrix_w
             assert force_matrix.ndim == 4 and force_matrix.shape[-1] == 3, (
                 f"in_contact: expected force_matrix_w shape (N, B, M, 3), "
                 f"got {tuple(force_matrix.shape)}"
@@ -598,7 +655,7 @@ class WorldState:
                 print(f"[WorldState] Batch sensor for '{body}' not found. Available sensors: {available_sensors}. Found '{body}' in contact with: {objects_in_contact}")
             return objects_in_contact
 
-        force_matrix = batch_sensor.data.force_matrix_w[env_id]
+        force_matrix = _as_torch_tensor(batch_sensor.data.force_matrix_w)[env_id]
         force_above_threshold = torch.abs(force_matrix) > force_threshold
         any_force_per_body = torch.any(force_above_threshold, dim=-1)
         in_contact_mask = torch.any(any_force_per_body, dim=0)
@@ -627,12 +684,11 @@ class WorldState:
             env_id: None → (num_envs, 3), int → (3,)
         """
         contact_sensor, is_reversed = get_contact_sensor_with_order(self.env.scene, body1, body2)
+        force_matrix = _as_torch_tensor(contact_sensor.data.force_matrix_w)
         if env_id is not None:
-            force_matrix = contact_sensor.data.force_matrix_w[env_id]
-            net_force = force_matrix.sum(dim=(0, 1))  # (3,)
+            net_force = force_matrix[env_id].sum(dim=(0, 1))  # (3,)
         else:
             # (num_envs, num_bodies, num_filter_bodies, 3) → (num_envs, 3)
-            force_matrix = contact_sensor.data.force_matrix_w
             net_force = force_matrix.sum(dim=(1, 2))  # (N, 3)
 
         if is_reversed:
@@ -659,14 +715,12 @@ class WorldState:
 
         if env_id is not None:
             force_magnitude = torch.norm(contact_force).item()
-            if force_magnitude < force_threshold:
-                return False
-            fz = contact_force[2].item()
-            if fz <= 0:
-                return False
-            if fz < force_magnitude * cos_theta_max:
-                return False
-            return True
+            contact_ok = (
+                force_magnitude >= force_threshold
+                and contact_force[2].item() > 0
+                and contact_force[2].item() >= force_magnitude * cos_theta_max
+            )
+            return contact_ok
         else:
             # Vectorized: contact_force is (N, 3)
             force_magnitude = torch.norm(contact_force, dim=-1)  # (N,)
@@ -674,7 +728,8 @@ class WorldState:
             has_contact = force_magnitude >= force_threshold
             force_upward = fz > 0
             in_cone = fz >= force_magnitude * cos_theta_max
-            return has_contact & force_upward & in_cone  # (N,) bool tensor
+            contact_ok = has_contact & force_upward & in_cone  # (N,) bool tensor
+            return contact_ok
 
     def get_objects_supported_on(
         self,

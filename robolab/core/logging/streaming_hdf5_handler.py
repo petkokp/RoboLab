@@ -386,7 +386,8 @@ class StreamingHDF5DatasetFileHandler(DatasetFileHandlerBase):
                     key_group, sub_key, sub_value, datasets_cache
                 )
         else:
-            np_data = value.cpu().numpy()
+            # isaaclab3 EpisodeData stores each field as a list of per-step tensors; stack into [T, ...].
+            np_data = np.stack([v.detach().cpu().numpy() for v in value])
             cache_key = f"{group.name}/{key}"
 
             if cache_key in datasets_cache:
