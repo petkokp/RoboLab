@@ -51,6 +51,11 @@ Each `run_{i}.hdf5` file contains the following hierarchical structure (`h5glanc
 └data (2 attributes)
   ├demo_0 (2 attributes)
   │ ├actions      [float32: 470 × 8]
+  │ ├ee_pose
+  │ │ ├position         [float32: 470 × 3]   # EE (base_link) position, relative to env origin
+  │ │ ├orientation      [float32: 470 × 4]   # world-frame quaternion (wxyz)
+  │ │ ├linear_velocity  [float32: 470 × 3]   # world frame
+  │ │ └angular_velocity [float32: 470 × 3]   # world frame
   │ ├initial_state
   │ │ ├articulation
   │ │ │ └robot
@@ -58,16 +63,23 @@ Each `run_{i}.hdf5` file contains the following hierarchical structure (`h5glanc
   │ │ │   ├joint_velocity [float32: 1 × 13]
   │ │ │   ├root_pose      [float32: 1 × 7]
   │ │ │   └root_velocity  [float32: 1 × 6]
-  │ │ └rigid_object
-  │ │   ├banana
-  │ │   │ ├root_pose      [float32: 1 × 7]
-  │ │   │ └root_velocity  [float32: 1 × 6]
-  │ │   ├bowl
-  │ │   │ ├root_pose      [float32: 1 × 7]
-  │ │   │ └root_velocity  [float32: 1 × 6]
-  │ │   └rubiks_cube
-  │ │     ├root_pose      [float32: 1 × 7]
-  │ │     └root_velocity  [float32: 1 × 6]
+  │ │ ├rigid_object
+  │ │ │ ├banana
+  │ │ │ │ ├root_pose      [float32: 1 × 7]
+  │ │ │ │ └root_velocity  [float32: 1 × 6]
+  │ │ │ ├bowl
+  │ │ │ │ ├root_pose      [float32: 1 × 7]
+  │ │ │ │ └root_velocity  [float32: 1 × 6]
+  │ │ │ └rubiks_cube
+  │ │ │   ├root_pose      [float32: 1 × 7]
+  │ │ │   └root_velocity  [float32: 1 × 6]
+  │ │ └cameras                              # one entry per camera sensor in the scene
+  │ │   ├over_shoulder_left_camera
+  │ │   │ ├position    [float32: 1 × 3]     # camera position, relative to env origin
+  │ │   │ └orientation [float32: 1 × 4]     # world-frame quaternion (ROS, xyzw)
+  │ │   └wrist_cam
+  │ │     ├position    [float32: 1 × 3]
+  │ │     └orientation [float32: 1 × 4]
   │ ├obs
   │ │ ├arm_joint_pos      [float32: 470]
   │ │ ├over_shoulder_left_camera  [uint8: 470 × 720 × 1280 × 3]
@@ -112,9 +124,22 @@ Each `run_{i}.hdf5` file contains the following hierarchical structure (`h5glanc
 ### Episodes
 - **`demo_i`**: Episode data for `env_id=i`. In single-env mode, only `demo_0` exists. In multi-env mode, `demo_0` through `demo_{N-1}` exist in each `run_{run_idx}.hdf5`.
 
+### Coordinate Frames
+All recorded **positions** are in the **env-local frame** — relative to each env's
+scene origin (`env.scene.env_origins`) — so trajectories are directly comparable across
+parallel envs. This covers `ee_pose/position`, `*/root_pose` (initial_state and states),
+`initial_state/.../cameras/position`, and `bbox` corners/centroid. All recorded
+**orientations** and **velocities** are in the world frame; they are unaffected by the
+static per-env translation.
+
 ### Data Components
 - **`actions`**: Robot control commands (8-dimensional for joint positions)
-- **`initial_state`**: Starting configuration of robot and objects
+- **`ee_pose`**: Per-step end-effector (`base_link`) pose and velocity
+  - **`position`**: EE position, `(T, 3)`, env-local (relative to env origin)
+  - **`orientation`**: EE orientation as a world-frame quaternion `(w, x, y, z)`, `(T, 4)`
+  - **`linear_velocity`** / **`angular_velocity`**: EE velocities in world frame, `(T, 3)`
+- **`initial_state`**: Starting configuration of robot, objects, and cameras
+  - **`cameras/{name}`**: Per-camera extrinsics captured after reset/randomization — `position` (env-local, `(1, 3)`) and `orientation` (world-frame ROS quaternion `(x, y, z, w)`, `(1, 4)`). One entry per camera sensor in the scene.
 - **`obs`**: Observations including joint positions, camera images, and gripper state
 - **`states`**: Full state trajectory of robot and objects over time
 - **`subtask`**: Task progress tracking metrics

@@ -143,7 +143,7 @@ This is a report on the maximum `num_envs` each RoboLab benchmark task can run w
 
 ## How this was measured
 
-OOM signatures recognized in the job logs:
+OOM signatures recognized by the monitor regex (scanned from the tail of each job's logs):
 
 - `out of memory`, `OOMKilled`, `cudaErrorOutOfMemory`, `CUDA error: out of memory` (standard)
 - `Warp CUDA error: Failed to get driver entry point.*cuDeviceGetUuid` (Warp init OOM, opaque)

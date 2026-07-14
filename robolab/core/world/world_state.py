@@ -537,7 +537,8 @@ class WorldState:
 
     def get_bbox(self, body: str, env_id: int | None = None) -> tuple:
         """
-        Get the Oriented Bounding Box (OBB) for a body in world coordinates.
+        Get the Oriented Bounding Box (OBB) for a body in env-local coordinates
+        (relative to each env's scene origin, via get_pose's default is_relative=True).
 
         Uses cached local geometry + vectorized transform_points for efficiency.
 
@@ -595,7 +596,8 @@ class WorldState:
 
     def get_centroid(self, body: str, env_id: int | None = None):
         """
-        Get the geometric center of a body's OBB in world coordinates.
+        Get the geometric center of a body's OBB in env-local coordinates
+        (relative to each env's scene origin, via get_pose's default is_relative=True).
 
         Args:
             env_id: None → Tensor(num_envs, 3), int → np.ndarray(3,)
