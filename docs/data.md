@@ -2,6 +2,8 @@
 
 By default, proprio data will be recorded in the hdf5 file. To turn on image data recording, `robolab.constants.RECORD_IMAGE_DATA` needs to be set to True.
 
+Recorded episodes can be played back — see [Replaying Recorded Episodes](replay.md).
+
 ## Single-Env vs Multi-Env Recording
 
 RoboLab supports running multiple parallel environments per task. The recording system handles both cases:

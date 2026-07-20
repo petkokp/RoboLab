@@ -3,7 +3,7 @@
 
 [project]
 name = "robolab"
-version = "0.1.0"
+version = "0.2.1"
 description = "A benchmark for simulation"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -74,6 +74,12 @@ index-strategy = "unsafe-best-match"
 # wheel, so any resolver pass that picked it would break `uv sync` on Linux.
 # Exclude that specific version.
 constraint-dependencies = ["warp-lang != 1.13.0.dev20260418"]
+# isaacsim pins websockets==12.0 — stale metadata in practice: kit only uses
+# websockets for livestream/omni.services, which headless eval never touches.
+# The exact pin otherwise drags the whole resolution down to websockets 12.0
+# (confirmed on the isaacsim6 stack too). Override it so the lock resolves a
+# modern websockets for the policy clients (openpi websocket serving path).
+override-dependencies = ["websockets>=14.0"]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

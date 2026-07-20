@@ -40,6 +40,7 @@ The core concepts are:
 - **[Inference Clients](../policies/README.md)** — Built-in policy clients and server setup instructions
 #### Output
 - **[Data Storage and Output](data.md)** — Output directory structure, HDF5 layout, and episode result fields
+- **[Replaying Recorded Episodes](replay.md)** — Playing back recorded HDF5 episodes: initial-state restore, recorded env config, faithful-reproduction checklist, and state validation
 - **[Analysis and Results Parsing](analysis.md)** — Scripts for summarizing, comparing, and auditing experiment results
 #### Debug
 - **[Debugging](debug.md)** — Verbose/debug flags, world state inspection, and diagnostic scripts
