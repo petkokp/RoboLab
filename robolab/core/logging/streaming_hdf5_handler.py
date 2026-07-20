@@ -4,10 +4,12 @@
 """Streaming HDF5 dataset file handler that supports incremental writing with multiple concurrent episodes."""
 
 import atexit
+import importlib.metadata
 import json
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import h5py
 import numpy as np
@@ -89,11 +91,7 @@ class StreamingHDF5DatasetFileHandler(DatasetFileHandlerBase):
                 print(f"\033[93m[StreamingHDF5] WARNING: Removing corrupt file and creating a new one: {file_path}\033[0m")
                 os.remove(file_path)
                 self._hdf5_file_stream = h5py.File(file_path, "w")
-                self._hdf5_data_group = self._hdf5_file_stream.create_group("data")
-                self._hdf5_data_group.attrs["total"] = 0
-                self._demo_count = 0
-                env_name = env_name if env_name is not None else ""
-                self.add_env_args({"env_name": env_name, "type": 2})
+                self._init_data_group(env_name)
                 return
 
             if "data" in self._hdf5_file_stream:
@@ -104,18 +102,28 @@ class StreamingHDF5DatasetFileHandler(DatasetFileHandlerBase):
                 if "env_args" in self._hdf5_data_group.attrs:
                     self._env_args = json.loads(self._hdf5_data_group.attrs["env_args"])
             else:
-                self._hdf5_data_group = self._hdf5_file_stream.create_group("data")
-                self._hdf5_data_group.attrs["total"] = 0
-                self._demo_count = 0
-                env_name = env_name if env_name is not None else ""
-                self.add_env_args({"env_name": env_name, "type": 2})
+                self._init_data_group(env_name)
         else:
             self._hdf5_file_stream = h5py.File(file_path, "w")
-            self._hdf5_data_group = self._hdf5_file_stream.create_group("data")
-            self._hdf5_data_group.attrs["total"] = 0
-            self._demo_count = 0
-            env_name = env_name if env_name is not None else ""
-            self.add_env_args({"env_name": env_name, "type": 2})
+            self._init_data_group(env_name)
+
+    def _init_data_group(self, env_name: str | None):
+        """Create the ``data`` group in a fresh file and stamp recording provenance.
+
+        The provenance attrs (simulator stack versions and recording date) let
+        replay tooling warn when a recording is replayed on a different
+        IsaacSim/IsaacLab stack, whose contact mechanics differ.
+        """
+        self._hdf5_data_group = self._hdf5_file_stream.create_group("data")
+        self._hdf5_data_group.attrs["total"] = 0
+        self._demo_count = 0
+        self.add_env_args({"env_name": env_name if env_name is not None else "", "type": 2})
+        for package in ("isaaclab", "isaacsim"):
+            try:
+                self._hdf5_data_group.attrs[f"{package}_version"] = importlib.metadata.version(package)
+            except importlib.metadata.PackageNotFoundError:
+                pass
+        self._hdf5_data_group.attrs["recorded_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def __del__(self):
         self.close()

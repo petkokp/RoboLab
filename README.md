@@ -58,6 +58,8 @@ python examples/run_recorded.py --headless
 python examples/run_gripper_toggle.py --task BananaInBowlTask --headless
 ```
 
+> **Replay**: `run_recorded.py` restores the recorded initial state, replays the recorded actions open-loop, and by default replays with the exact env configuration saved next to the recording (`env_cfg.json`). Note that the recorded outcome is not invariant across simulator versions — contact dynamics evolve between IsaacSim/IsaacLab releases (see [Requirements](#requirements)) — and faithful reproduction requires recording and replaying with a single env. See **[Replaying Recorded Episodes](docs/replay.md)** for the full guide, including replaying your own recordings, `--env-config`, and `--validate-states`.
+
 ### Run with a policy
 
 RoboLab uses a **server-client architecture**: your model runs as a standalone server, and RoboLab connects to it via a lightweight inference client. To quickly test RoboLab, try [Pi0.5 via OpenPI](policies/pi0_family/README.md).
@@ -66,7 +68,7 @@ Quick run after install in the RoboLab terminal, to see it working:
 
 ```bash
 cd robolab
-uv run python policies/pi0_family/run.py --policy pi05 --task BananaInBowlTask --num-envs 10 --enable-subtask
+uv run python policies/pi0_family/run.py --policy pi05 --task BananaInBowlTask --num-envs 10
 ```
 Use the [dashboard](#dashboard) to view the output written to your local folder.
 
@@ -85,8 +87,8 @@ python policies/pi0_family/run.py --policy pi05 --tag semantics
 # Run 12 parallel episodes per task
 python policies/pi0_family/run.py --policy pi05 --headless --num-envs 12
 
-# Enable subtask progress tracking
-python policies/pi0_family/run.py --policy pi05 --enable-subtask
+# Disable subtask progress tracking (on by default; drops score/reason from results)
+python policies/pi0_family/run.py --policy pi05 --disable-subtask
 
 # Resume a previous run (skips completed episodes)
 python policies/pi0_family/run.py --policy pi05 --output-folder-name my_previous_run
@@ -135,6 +137,7 @@ Full documentation is at **[docs/README.md](docs/README.md)**, covering:
 - [Robots](docs/robots.md), [Cameras](docs/camera.md), [Lighting](docs/lighting.md), [Backgrounds](docs/background.md) — Configuring simulation parameters
 - [Environment Registration](docs/environment_registration.md) — Combining tasks with robot/observation/action configs
 - [Inference Clients](policies/README.md) — A list of supported open-source models and clients
+- [Replaying Recorded Episodes](docs/replay.md) — Playing back recorded HDF5 episodes faithfully
 - [Analysis and Results](docs/analysis.md) — Summarizing, comparing, and auditing results
 - [Dashboard](docs/dashboard.md) — Interactive web viewer for benchmark, tasks, scenes, and eval results
 - [Subtask Checking](docs/subtask.md), [Conditionals](docs/task_conditionals.md), [Event Tracking](docs/event_tracking.md)
@@ -147,6 +150,8 @@ Full documentation is at **[docs/README.md](docs/README.md)**, covering:
 | Isaac Lab | 3.0.0 beta 2 |
 | Python | >=3.12,<3.13 |
 | Linux | Ubuntu 22.04+ |
+
+> **Note on simulator versions**: IsaacSim 5.0 and 5.1 ship different PhysX builds, so contact-rich dynamics (grasping, object settling) are not invariant across the two stacks. Benchmark results may be subject to differences in simulator dynamics between versions, and are best compared against runs on the same stack. Recorded demonstrations replay most faithfully on the stack they were recorded with.
 
 - **Disk space**: ~8 GB (assets account for ~7 GB)
 - **GPU**: NVIDIA RTX GPU required. Recommend 48GB+ VRAM. See [Isaac Lab's hardware requirements](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html#system-requirements) for recommended GPUs and VRAM.
