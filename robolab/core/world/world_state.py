@@ -447,7 +447,8 @@ class WorldState:
             if env_id is not None:
                 # Clamp index — static extras may have fewer prims than envs
                 idx = min(env_id, num_prims - 1)
-                positions, orientations = body.get_world_poses(indices=[idx])
+                # Fabric-backed frame views reject plain lists; a CPU tensor works for every backend.
+                positions, orientations = body.get_world_poses(indices=torch.tensor([idx], dtype=torch.int64))
                 pos = positions[0]
                 quat = orientations[0]
                 if not isinstance(pos, torch.Tensor):
