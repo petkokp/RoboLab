@@ -134,12 +134,23 @@ class DroidCfg:
             # mimic linkage -> it oscillated (finger_joint swung +/-pi) and corrupted the
             # gripper_pos proprio. Values: drive 1650/17/0.02, finger 50/0.2/0.001,
             # passive 1/0/0 (effort_limit_sim/stiffness/damping).
+            #
+            # armature=0.01 on all six gripper joints: without reflected inertia the
+            # four-bar linkage self-excites under PhysX -- joint velocity doubles every
+            # step until the whole articulation reads NaN. Measured on the composition
+            # benchmark: ~30% of episodes silently blew up, and all 160 instrumented
+            # runaway onsets started in a gripper joint (84x left_inner_finger_knuckle),
+            # never in the arm. A 64-env scripted stress harness reproduces the runaway at
+            # policy-realistic action jerk (38/64 envs in 600 control steps) and armature
+            # 0.01 drives it to 3/64 with the finger stroke unchanged (0.785 rad); 0.005
+            # and 0.02 perform identically, so the value is a plateau, not a tuning.
             "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
                 effort_limit_sim=1650.0,
                 velocity_limit_sim=10.0,
                 stiffness=17.0,
                 damping=0.02,
+                armature=0.01,
             ),
             "gripper_finger": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_finger_joint"],
@@ -147,6 +158,7 @@ class DroidCfg:
                 velocity_limit_sim=10.0,
                 stiffness=0.2,
                 damping=0.001,
+                armature=0.01,
             ),
             "gripper_passive": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_finger_knuckle_joint", "right_outer_knuckle_joint"],
@@ -154,6 +166,7 @@ class DroidCfg:
                 velocity_limit_sim=10.0,
                 stiffness=0.0,
                 damping=0.0,
+                armature=0.01,
             ),
         },
     )
