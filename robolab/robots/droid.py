@@ -165,7 +165,11 @@ class DroidCfg:
                 effort_limit_sim=1.0,
                 velocity_limit_sim=10.0,
                 stiffness=0.0,
-                damping=0.0,
+                # Viscous damping on the passive joints: armature alone leaves the linkage with
+                # no dissipation path, and a rare resonance tail (~1% of production episodes)
+                # survives sustained contact. 0.05 removes the free-air overshoot (0.097 rad)
+                # while leaving close/open step response and grip hold unchanged.
+                damping=0.05,
                 armature=0.01,
             ),
         },
