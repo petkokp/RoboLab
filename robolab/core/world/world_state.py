@@ -22,7 +22,7 @@ import isaaclab.sim.utils as sim_utils
 import numpy as np
 import torch
 import warp as wp
-from isaaclab.assets import Articulation, AssetBase, DeformableObject, RigidObject
+from isaaclab.assets import AssetBase, BaseArticulation, DeformableObject, RigidObject
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.sensors.frame_transformer.frame_transformer import FrameTransformer
 from isaaclab.sim.views.usd_frame_view import UsdFrameView
@@ -164,7 +164,7 @@ class WorldState:
         return self.env.scene.rigid_objects
 
     @property
-    def articulations(self) -> dict[str, Articulation]:
+    def articulations(self) -> dict[str, BaseArticulation]:
         """Get list of movable object names"""
         return self.env.scene.articulations
 
@@ -275,7 +275,7 @@ class WorldState:
     #########################################################
     # Robot
     #########################################################
-    def get_articulation(self, articulation_name: str) -> Articulation:
+    def get_articulation(self, articulation_name: str) -> BaseArticulation:
         """ Return articulation from the scene"""
         if articulation_name in self.articulations.keys():
             return self.articulations[articulation_name]
@@ -308,7 +308,7 @@ class WorldState:
     def get_joint_names(self, body_name: str) -> list[str]:
         """Get joint names for articulated body"""
         body = self.get_body(body_name)
-        if not isinstance(body, Articulation):
+        if not isinstance(body, BaseArticulation):
             raise ValueError(f"Object {body_name} is not an articulation")
         return body.data.joint_names
 
@@ -319,7 +319,7 @@ class WorldState:
             env_id: None → (num_envs, num_joints), int → (num_joints,)
         """
         body = self.get_body(body_name)
-        if not isinstance(body, Articulation):
+        if not isinstance(body, BaseArticulation):
             raise ValueError(f"Object {body_name} is not an articulation")
         if env_id is None:
             return body.data.joint_pos.clone().detach()
@@ -332,7 +332,7 @@ class WorldState:
             env_id: None → (num_envs, num_joints), int → (num_joints,)
         """
         body = self.get_body(body_name)
-        if not isinstance(body, Articulation):
+        if not isinstance(body, BaseArticulation):
             raise ValueError(f"Object {body_name} is not an articulation")
         if env_id is None:
             return body.data.joint_vel.clone().detach()
