@@ -178,6 +178,7 @@ def auto_generate_task_env(task_file_path: str,
                           background_cfg=None,
                           observations_cfg = None,
                           actions_cfg = None,
+                          task_class_name: str | None = None,
                           **env_kwargs) -> Type[RobolabDefaultEnvCfg]:
     """
     Automatically generate a complete task environment configuration from a task file.
@@ -189,13 +190,14 @@ def auto_generate_task_env(task_file_path: str,
         lighting_cfg: Lighting configuration class to include
         observations_cfg: Observations configuration
         actions_cfg: Actions configuration
+        task_class_name: Which Task in the file to build, when it defines more than one
         **env_kwargs: Additional environment configuration parameters
 
     Returns:
         A complete environment configuration class
     """
     # Load the task class from the file
-    task_class = load_task_from_file(task_file_path)
+    task_class = load_task_from_file(task_file_path, task_class_name=task_class_name)
 
     # Generate the scene environment configuration
     scene_env_cfg = generate_scene_env_cfg(
@@ -257,6 +259,7 @@ def generate_env_cfg_from_task(task_file_path: str,
                     env_prefix: str="",
                     env_postfix: str="",
                     register: bool = True,
+                    task_class_name: str | None = None,
                     **kwargs) -> tuple[Type[RobolabDefaultEnvCfg], str]:
     """
     Create and optionally register a task environment from a task file.
@@ -272,7 +275,7 @@ def generate_env_cfg_from_task(task_file_path: str,
     Returns:
         The generated environment configuration class
     """
-    task_env_cfg = auto_generate_task_env(task_file_path, **kwargs)
+    task_env_cfg = auto_generate_task_env(task_file_path, task_class_name=task_class_name, **kwargs)
 
     if env_name is None:
         env_name = task_env_cfg.__name__.replace('EnvCfg', '')

@@ -18,13 +18,17 @@ _loaded_modules_cache: dict[str, object] = {}
 _task_classes_cache: dict[str, list] = {}
 
 
-def load_task_from_file(task_file_path: str, allow_multiple: bool = False) -> Task | list[Task]:
+def load_task_from_file(task_file_path: str, allow_multiple: bool = False,
+                       task_class_name: str | None = None) -> Task | list[Task]:
     """
     Load a Task class from a Python file. If allow_multiple is True, return a list of Task classes contained in the file.
     Results are cached to avoid re-importing the same file multiple times.
 
     Args:
         task_file_path: Path to the task file (e.g., 'sauce_bottles_crate.py')
+        allow_multiple: Return every Task subclass in the file rather than the first
+        task_class_name: Return this class specifically. Needed when a module defines several tasks,
+            where "the first one" is whatever dir() happens to sort first.
 
     Returns:
         The Task class from the file
@@ -34,10 +38,8 @@ def load_task_from_file(task_file_path: str, allow_multiple: bool = False) -> Ta
 
     # Check if we already have the task classes cached
     if normalized_path in _task_classes_cache:
-        task_classes = _task_classes_cache[normalized_path]
-        if not allow_multiple:
-            return task_classes[0]
-        return task_classes
+        return _select_task_class(_task_classes_cache[normalized_path], task_file_path,
+                                  allow_multiple, task_class_name)
 
     # Check if module is already loaded
     if normalized_path in _loaded_modules_cache:
@@ -72,9 +74,23 @@ def load_task_from_file(task_file_path: str, allow_multiple: bool = False) -> Ta
     # Cache the task classes
     _task_classes_cache[normalized_path] = task_classes
 
-    if not allow_multiple:
-        return task_classes[0]
-    return task_classes
+    return _select_task_class(task_classes, task_file_path, allow_multiple, task_class_name)
+
+
+def _select_task_class(task_classes: list, task_file_path: str, allow_multiple: bool,
+                       task_class_name: str | None):
+    """Pick what the caller asked for out of a file's Task classes."""
+    if task_class_name is not None:
+        for cls in task_classes:
+            if cls.__name__ == task_class_name:
+                return [cls] if allow_multiple else cls
+        raise ValueError(
+            f"Task class {task_class_name!r} not found in {task_file_path} "
+            f"(defines: {[c.__name__ for c in task_classes]})"
+        )
+    if allow_multiple:
+        return task_classes
+    return task_classes[0]
 
 
 def clear_task_cache():
@@ -243,7 +259,7 @@ def resolve_task_path(task: str, task_dir: str | Path) -> tuple[str, str]:
 
         for candidate_file in all_task_files:
             try:
-                task_classes = load_task_from_file(candidate_file, allow_multiple=False)
+                task_classes = load_task_from_file(candidate_file, allow_multiple=True)
                 if isinstance(task_classes, list):
                     for cls in task_classes:
                         if cls.__name__ == task_class_name_to_find:  # type: ignore[union-attr]

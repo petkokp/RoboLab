@@ -17,7 +17,7 @@ from typing import Any
 import robolab.constants
 from robolab.constants import TASK_DIR
 from robolab.core.environments.config import generate_env_cfg_from_task, print_env_cfg
-from robolab.core.task.task_utils import resolve_task_path
+from robolab.core.task.task_utils import load_task_from_file, resolve_task_path
 
 # Cfg-typed kwargs that may be passed as zero-arg factories instead of classes.
 # When the value is callable (and not a class), the factory invokes it once per
@@ -156,13 +156,16 @@ class EnvFactory:
         env_kwargs = _resolve_per_task_kwargs(env_kwargs)
         task_file_path, task_name = resolve_task_path(task, self.task_dir)
 
-        # Create and register the environment
+        # Create and register the environment. task_name is what resolve_task_path already worked out
+        # this identifier refers to; passing it on is what lets a module define more than one Task --
+        # re-deriving it downstream would take whichever class sorts first.
         env_cfg_class, actual_env_name = generate_env_cfg_from_task(
             task_file_path=task_file_path,
             env_name=env_name,
             env_prefix=env_prefix,
             env_postfix=env_postfix,
             register=True,
+            task_class_name=task_name,
             **env_kwargs
         )
 
@@ -264,13 +267,13 @@ class EnvFactory:
             for task_file in task_files:
                 # Extract task class name from filename (e.g., banana_in_bowl_task.py -> BananaInBowlTask)
                 task_name_to_file[task_file.stem] = str(task_file)
-                # Also try to get the actual class name from the file
+                # Map EVERY Task class in the file, not just the first: a module defining several
+                # tasks would otherwise register one env and drop the rest without an error.
                 try:
-                    from robolab.core.task.task_utils import get_task_class_name_from_file
-                    class_name = get_task_class_name_from_file(str(task_file))
-                    task_name_to_file[class_name] = str(task_file)
+                    for cls in load_task_from_file(str(task_file), allow_multiple=True):
+                        task_name_to_file[cls.__name__] = str(task_file)
                 except Exception:
-                    pass  # If we can't load the class name, just use file stem
+                    pass  # If we can't load the class names, just use file stem
 
         for task in tasks:
             task_name = Path(task).stem if ('/' in task or '\\' in task) else task
@@ -364,22 +367,27 @@ class EnvFactory:
         generated_envs = {}
 
         for i, task_file in enumerate(task_files):
-            task_name = task_file.stem
-
             if verbose_timing:
                 task_start = time.time()
 
-            env_cfg_class = self.create_env_cfg(
-                str(task_file),
-                tags=add_tags,
-                env_prefix=env_prefix,
-                env_postfix=env_postfix,
-                **env_kwargs
-            )
-            generated_envs[task_name] = env_cfg_class
+            # One env per Task CLASS. Addressing the file registers only its first class, so a module
+            # defining several tasks used to lose all but one -- silently, since discovery just
+            # returned a shorter list. A file holding one class keeps both its old call (by path) and
+            # its old key (the file stem), which is every task shipped here today.
+            task_classes = load_task_from_file(str(task_file), allow_multiple=True)
+            for task_class in task_classes:
+                single = len(task_classes) == 1
+                generated_envs[task_file.stem if single else task_class.__name__] = self.create_env_cfg(
+                    str(task_file) if single else task_class.__name__,
+                    tags=add_tags,
+                    env_prefix=env_prefix,
+                    env_postfix=env_postfix,
+                    **env_kwargs
+                )
 
             if verbose_timing:
-                print(f"[EnvFactory] ({i+1}/{len(task_files)}) Registered {task_name} in {time.time() - task_start:.3f}s")
+                names = ", ".join(c.__name__ for c in task_classes)
+                print(f"[EnvFactory] ({i+1}/{len(task_files)}) Registered {names} in {time.time() - task_start:.3f}s")
 
         if verbose_timing:
             print(f"[EnvFactory] Total registration time: {time.time() - total_start:.2f}s for {len(task_files)} tasks")
