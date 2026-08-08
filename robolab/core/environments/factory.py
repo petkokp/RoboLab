@@ -372,11 +372,13 @@ class EnvFactory:
 
             # One env per Task CLASS. Addressing the file registers only its first class, so a module
             # defining several tasks used to lose all but one -- silently, since discovery just
-            # returned a shorter list.
+            # returned a shorter list. A file holding one class keeps both its old call (by path) and
+            # its old key (the file stem), which is every task shipped here today.
             task_classes = load_task_from_file(str(task_file), allow_multiple=True)
             for task_class in task_classes:
-                generated_envs[task_class.__name__] = self.create_env_cfg(
-                    task_class.__name__ if len(task_classes) > 1 else str(task_file),
+                single = len(task_classes) == 1
+                generated_envs[task_file.stem if single else task_class.__name__] = self.create_env_cfg(
+                    str(task_file) if single else task_class.__name__,
                     tags=add_tags,
                     env_prefix=env_prefix,
                     env_postfix=env_postfix,
