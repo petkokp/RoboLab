@@ -185,7 +185,8 @@ def resolve_task_path(task: str, task_dir: str | Path) -> tuple[str, str]:
     Resolve a task identifier to a full file path and Task class name.
 
     Handles three cases:
-    1. Full file path (contains '/' or '\\') - use directly
+    1. Full file path (contains '/' or '\\') - use directly, optionally suffixed '::<ClassName>'
+       to pick one Task out of a module that defines several
     2. Filename ending in '.py' - attach to task_dir
     3. Task name - search recursively in task_dir for matching file
 
@@ -203,6 +204,9 @@ def resolve_task_path(task: str, task_dir: str | Path) -> tuple[str, str]:
         resolve_task_path("/path/to/BananaTask.py", task_dir)
         # Returns ("/path/to/BananaTask.py", "BananaTask")
 
+        resolve_task_path("/path/to/fruit_tasks.py::AppleTask", task_dir)
+        # Returns ("/path/to/fruit_tasks.py", "AppleTask")
+
         resolve_task_path("BananaTask.py", task_dir)
         # Returns ("/full/path/to/BananaTask.py", "BananaTask")
 
@@ -216,12 +220,14 @@ def resolve_task_path(task: str, task_dir: str | Path) -> tuple[str, str]:
 
     task_dir = Path(task_dir)
 
-    # Case 1: Full file path
+    # Case 1: Full file path, optionally naming one class inside it as "<path>::<ClassName>".
+    # Without the suffix a path resolves to the file's first Task, which is all a single-task module
+    # can mean; naming the class is how a module defining several of them addresses one.
     if '/' in task or '\\' in task:
-        if not Path(task).exists():
-            raise FileNotFoundError(f"Task file not found: {task}")
-        task_file_path = task
-        task_class_name = get_task_class_name_from_file(task_file_path)
+        task_file_path, _, class_in_file = task.partition('::')
+        if not Path(task_file_path).exists():
+            raise FileNotFoundError(f"Task file not found: {task_file_path}")
+        task_class_name = class_in_file or get_task_class_name_from_file(task_file_path)
         result = (task_file_path, task_class_name)
         _resolve_task_cache[cache_key] = result
         return result
