@@ -268,10 +268,11 @@ class EnvFactory:
                 # Extract task class name from filename (e.g., banana_in_bowl_task.py -> BananaInBowlTask)
                 task_name_to_file[task_file.stem] = str(task_file)
                 # Map EVERY Task class in the file, not just the first: a module defining several
-                # tasks would otherwise register one env and drop the rest without an error.
+                # tasks would otherwise register one env and drop the rest without an error. Each is
+                # addressed as "<path>::<ClassName>", since a bare path means the file's first task.
                 try:
                     for cls in load_task_from_file(str(task_file), allow_multiple=True):
-                        task_name_to_file[cls.__name__] = str(task_file)
+                        task_name_to_file[cls.__name__] = f"{task_file}::{cls.__name__}"
                 except Exception:
                     pass  # If we can't load the class names, just use file stem
 
@@ -378,7 +379,7 @@ class EnvFactory:
             for task_class in task_classes:
                 single = len(task_classes) == 1
                 generated_envs[task_file.stem if single else task_class.__name__] = self.create_env_cfg(
-                    str(task_file) if single else task_class.__name__,
+                    str(task_file) if single else f"{task_file}::{task_class.__name__}",
                     tags=add_tags,
                     env_prefix=env_prefix,
                     env_postfix=env_postfix,
