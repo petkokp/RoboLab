@@ -4,9 +4,15 @@
 
 **RoboLab** is a task-based evaluation benchmark for robot manipulation policies built on [NVIDIA Isaac Lab](https://github.com/isaac-sim/IsaacLab). It provides 100+ manipulation tasks with automated success detection, a server-client policy architecture, and multi-environment parallel evaluation — designed for reproducible, large-scale benchmarking of generalist robot policies in simulation.
 
+<h4 align="center"><a href="assets/objects/README.md">Objects</a> · <a href="assets/scenes/README.md">Scenes</a> · <a href="robolab/tasks/README.md">Tasks</a> · <a href="robolab/robots/README.md">Robots</a> · <a href="policies/README.md">Policy Clients</a></h4>
+
 <div align="center">
   <img src="docs/images/robolab.png" alt="RoboLab Overview" width="800"/>
 </div>
+
+## News
+
+- **[2026/08]** 🔥 [**RoboVoLo**](https://github.com/NVlabs/RoboVoLo) is released — a task library from the [VoLo](https://chicychen.github.io/VoLo/) project extending RoboLab with long-horizon and reasoning-heavy manipulation tasks, evaluated via the bundled [VoLo policy backend](policies/volo/README.md).
 
 ## Key Features
 
@@ -16,6 +22,8 @@
 - **AI-Enabled Workflows**: Generate new scenes and tasks **in minutes** using natural language with the [/robolab-scenegen](skills/robolab-scenegen/) and [/robolab-taskgen](skills/robolab-taskgen/) Claude Code skills.
 - **Multi-Environment Parallel Evaluation**: Run multiple episodes in parallel across environments with vectorized conditionals and per-environment termination.
 - **Results Dashboard with Episode Videos and Cross-Experiment Analysis**: A self-contained web [dashboard](docs/dashboard.md) for browsing scenes/tasks, replaying episode videos, and comparing results across experiments.
+
+See the [Ecosystem](docs/ecosystem.md) page for projects built on RoboLab.
 
 ## Getting Started
 
@@ -141,6 +149,7 @@ Full documentation is at **[docs/README.md](docs/README.md)**, covering:
 - [Analysis and Results](docs/analysis.md) — Summarizing, comparing, and auditing results
 - [Dashboard](docs/dashboard.md) — Interactive web viewer for benchmark, tasks, scenes, and eval results
 - [Subtask Checking](docs/subtask.md), [Conditionals](docs/task_conditionals.md), [Event Tracking](docs/event_tracking.md)
+- [Ecosystem](docs/ecosystem.md) — Task libraries and projects built on RoboLab
 
 ## Requirements
 

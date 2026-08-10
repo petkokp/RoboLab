@@ -21,6 +21,12 @@ from isaaclab.utils import configclass
 from isaaclab_tasks.utils import load_cfg_from_registry
 
 from robolab.core.environments.base import RobolabDefaultEnvCfg
+from robolab.core.environments.scene_fixture import (
+    FRANKA_TABLE_FIXTURE,
+    robot_cfg_at_ground,
+    scene_without_table_fixture,
+    table_fixture_asset,
+)
 from robolab.core.sensors.contact_sensor_utils import create_contact_sensors
 from robolab.core.task.task import Task
 from robolab.core.task.task_utils import load_task_from_file
@@ -41,14 +47,24 @@ def generate_scene_env_cfg(task_class: Task,
 
     Args:
         task_class: The Task class
-        robot_cfg: Robot configuration class to include
+        robot_cfg: Robot configuration class to include. Two optional class-attribute
+            labels adapt the task scene per robot: ``table_fixture`` (a TableFixtureCfg,
+            default FRANKA_TABLE_FIXTURE) names the fixture USD the robot is mounted on
+            and its pose, or None for robots with their own base; ``root_on_scene_ground``
+            (default False) rebases the robot root z to the scene's authored /GroundPlane
+            height. See robolab.core.environments.scene_fixture.
         camera_cfg: Camera configuration class to include, could be a list of configurations
         lighting_cfg: Lighting configuration class to include, could be a list of configurations
 
     Returns:
         A configclass that combines the task scene with robot, camera, and lighting
     """
-    bases = [task_class.scene, robot_cfg, InteractiveSceneCfg]
+    fixture = getattr(robot_cfg, "table_fixture", FRANKA_TABLE_FIXTURE)
+    task_scene, ground_z = scene_without_table_fixture(task_class.scene)
+    if getattr(robot_cfg, "root_on_scene_ground", False):
+        robot_cfg = robot_cfg_at_ground(robot_cfg, ground_z)
+
+    bases = [task_scene, robot_cfg, InteractiveSceneCfg]
 
     # Add optionals only if not None
     if camera_cfg is not None:
@@ -66,9 +82,18 @@ def generate_scene_env_cfg(task_class: Task,
     if background_cfg is not None:
         bases.append(background_cfg)
 
-    # Dynamically create the class with a meaningful name
+    # Dynamically create the class with a meaningful name. The consumed robot
+    # labels are shadowed with values InteractiveScene accepts: the resolved
+    # fixture asset (or None), and None for the ground flag — configclass
+    # copies inherited class attributes onto instances, and InteractiveScene
+    # rejects instance members it does not recognize unless they are None.
     class_name = f"{task_class.__name__}SceneEnvCfg"
-    cfg_cls = type(class_name, tuple(bases), {})
+    members = {
+        "table_fixture": table_fixture_asset(fixture, robot_cfg),
+        "root_on_scene_ground": None,
+        "__annotations__": {"table_fixture": "AssetBaseCfg | None", "root_on_scene_ground": "bool | None"},
+    }
+    cfg_cls = type(class_name, tuple(bases), members)
 
     # Apply the configclass decorator
     return configclass(cfg_cls)
@@ -90,7 +115,10 @@ def generate_task_env_cfg(task_class: Task,
                          num_envs: int = 1,
                          eye: tuple[float, float, float] = (1.5, 0.0, 1.0),
                          lookat: tuple[float, float, float] = (0.2, 0.0, 0.0),
-                         env_spacing: float = 10.0) -> Type[RobolabDefaultEnvCfg]:
+                         env_spacing: float = 10.0,
+                         gripper_closure_cfg: dict | None = None,
+                         lazy_sensor_update: bool = True,
+                         object_state_obs: bool = False) -> Type[RobolabDefaultEnvCfg]:
     """
     Generate a complete task environment configuration class.
 
@@ -105,11 +133,34 @@ def generate_task_env_cfg(task_class: Task,
         seed: Random seed
         num_envs: Number of environments
         env_spacing: Environment spacing
+        lazy_sensor_update: Passed to the scene config. Set False when sensor
+            annotators beyond rgb (e.g. depth) must render eagerly in headless
+            mode; otherwise their observations stay empty. Default True
+            (IsaacLab default).
+        object_state_obs: If True, add a per-task ``object_state_obs``
+            observation group with ground-truth ``<object>_pos`` (env-local
+            meters), ``<object>_quat`` (world-frame w, x, y, z), and
+            ``<object>_vel`` (world-frame) terms for every entry of the
+            task's ``contact_object_list`` (minus fixtures). Default False.
 
     Returns:
         A complete environment configuration class
     """
     from robolab.core.task.subtask_utils import compute_difficulty_score, count_subtasks
+
+    if object_state_obs:
+        from isaaclab.managers import ObservationGroupCfg as ObsGroup
+
+        from robolab.core.observations.observation_utils import generate_object_state_obs, generate_obs_cfg
+        # Fixtures have no meaningful root state to observe; matches the
+        # GT-state exporter's fixture filter.
+        fixtures = {"table", "robot"}
+        object_names = [n for n in (task_class.contact_object_list or []) if n not in fixtures]
+        existing_groups = {name: value for name, value in vars(observations_cfg).items()
+                           if isinstance(value, ObsGroup)}
+        ObjectStateObsCfg = generate_object_state_obs(object_names)
+        observations_cfg = generate_obs_cfg({**existing_groups, "object_state_obs": ObjectStateObsCfg()})()
+
     attributes = getattr(task_class, "attributes", []) or []
     subtasks_raw = getattr(task_class, "subtasks", None)
     num_subtasks = count_subtasks(subtasks_raw)
@@ -141,7 +192,9 @@ def generate_task_env_cfg(task_class: Task,
 
             # Set task-specific configs
             self.scene = scene_env_cfg(num_envs=num_envs, env_spacing=env_spacing)
+            self.scene.lazy_sensor_update = lazy_sensor_update
             self.contact_gripper = contact_gripper
+            self.gripper_closure_cfg = gripper_closure_cfg
             self.instruction = task_class.instruction
             self.terminations = task_class.terminations()
             self.contact_object_list = task_class.contact_object_list
