@@ -2,6 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import torch
+import warp as wp
+
+
+def to_torch(value):
+    """Return simulator data as a torch tensor regardless of backend.
+
+    isaaclab3 hands back warp arrays for some articulation data properties (root_quat_w among
+    them), and the torch-script math in isaaclab.utils.math rejects those outright:
+    ``quat_inv() Expected a value of type 'Tensor' ... but instead found type 'ProxyArray'``.
+    Convert warp -> torch; pass torch tensors through unchanged.
+    """
+    return value if isinstance(value, torch.Tensor) else wp.to_torch(value)
 
 
 def transform_pose_from_b_to_w_vectorized(pose_b_f1: torch.Tensor, T_f1_w: torch.Tensor):

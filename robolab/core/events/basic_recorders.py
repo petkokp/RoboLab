@@ -9,6 +9,8 @@ from isaaclab.sensors import Camera
 from isaaclab.utils import configclass
 from isaaclab.utils.math import subtract_frame_transforms
 
+from robolab.core.utils.transform_utils import to_torch
+
 ########################################################################################
 # Recorder terms. Adapted from isaaclab.envs.mdp.recorders.recorders.
 ########################################################################################
@@ -154,15 +156,15 @@ class PostStepEndEffectorPoseRecorder(RecorderTerm):
         # root sits at the env origin with identity rotation (Franka family) this is
         # numerically identical to the old env-local recording.
         ee_pos, ee_quat = subtract_frame_transforms(
-            self._robot.data.root_pos_w,
-            self._robot.data.root_quat_w,
-            self._robot.data.body_pos_w[:, self._ee_body_idx, :],
-            self._robot.data.body_quat_w[:, self._ee_body_idx, :],
+            to_torch(self._robot.data.root_pos_w),
+            to_torch(self._robot.data.root_quat_w),
+            to_torch(self._robot.data.body_pos_w)[:, self._ee_body_idx, :],
+            to_torch(self._robot.data.body_quat_w)[:, self._ee_body_idx, :],
         )  # (num_envs, 3), (num_envs, 4)
 
         # Get body velocity from articulation
-        ee_lin_vel = self._robot.data.body_lin_vel_w[:, self._ee_body_idx, :]  # (num_envs, 3)
-        ee_ang_vel = self._robot.data.body_ang_vel_w[:, self._ee_body_idx, :]  # (num_envs, 3)
+        ee_lin_vel = to_torch(self._robot.data.body_lin_vel_w)[:, self._ee_body_idx, :]  # (num_envs, 3)
+        ee_ang_vel = to_torch(self._robot.data.body_ang_vel_w)[:, self._ee_body_idx, :]  # (num_envs, 3)
 
         return "ee_pose", {
             "position": ee_pos,
@@ -200,8 +202,8 @@ class PostStepRobotRootPoseRecorder(RecorderTerm):
         if self._robot is None:
             return None, None
 
-        root_pos = self._robot.data.root_pos_w - self._env.scene.env_origins[:, 0:3]  # (num_envs, 3), env-local
-        root_quat = self._robot.data.root_quat_w  # (num_envs, 4), (w, x, y, z)
+        root_pos = to_torch(self._robot.data.root_pos_w) - self._env.scene.env_origins[:, 0:3]
+        root_quat = to_torch(self._robot.data.root_quat_w)  # (num_envs, 4), (w, x, y, z)
         return "robot_root_pose", {
             "position": root_pos,
             "orientation": root_quat,

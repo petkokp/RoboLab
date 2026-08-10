@@ -26,6 +26,7 @@ from isaaclab.utils import configclass, noise
 from isaaclab.utils.math import subtract_frame_transforms
 
 from robolab.constants import ROBOTS_DIR
+from robolab.core.utils.transform_utils import to_torch
 from robolab.core.environments.scene_fixture import FRANKA_TABLE_FIXTURE
 
 # Offset of the end-effector control frame relative to base_link. Used by:
@@ -282,9 +283,9 @@ def ee_pos(
     body_idx = robot.data.body_names.index(ee_body_name)
     # Return position (shape: [num_envs, 3])
     pos, _ = subtract_frame_transforms(
-        robot.data.root_pos_w,
-        robot.data.root_quat_w,
-        robot.data.body_pos_w[:, body_idx, :],
+        to_torch(robot.data.root_pos_w),
+        to_torch(robot.data.root_quat_w),
+        to_torch(robot.data.body_pos_w)[:, body_idx, :],
     )
     return pos
 
@@ -299,9 +300,9 @@ def ee_quat(
     body_idx = robot.data.body_names.index(ee_body_name)
     # Return quaternion (shape: [num_envs, 4])
     _, quat = subtract_frame_transforms(
-        robot.data.root_pos_w,
-        robot.data.root_quat_w,
-        q02=robot.data.body_quat_w[:, body_idx, :],
+        to_torch(robot.data.root_pos_w),
+        to_torch(robot.data.root_quat_w),
+        q02=to_torch(robot.data.body_quat_w)[:, body_idx, :],
     )
     return quat
 
@@ -312,9 +313,9 @@ def eef_pos(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("
     robot = env.scene["robot"]
     idx = frames.data.target_frame_names.index("eef_frame")
     pos, _ = subtract_frame_transforms(
-        robot.data.root_pos_w,
-        robot.data.root_quat_w,
-        frames.data.target_pos_w[:, idx, :],
+        to_torch(robot.data.root_pos_w),
+        to_torch(robot.data.root_quat_w),
+        to_torch(frames.data.target_pos_w)[:, idx, :],
     )
     return pos
 
@@ -325,9 +326,9 @@ def eef_quat(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(
     robot = env.scene["robot"]
     idx = frames.data.target_frame_names.index("eef_frame")
     _, quat = subtract_frame_transforms(
-        robot.data.root_pos_w,
-        robot.data.root_quat_w,
-        q02=frames.data.target_quat_w[:, idx, :],
+        to_torch(robot.data.root_pos_w),
+        to_torch(robot.data.root_quat_w),
+        q02=to_torch(frames.data.target_quat_w)[:, idx, :],
     )
     return quat
 
